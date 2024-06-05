@@ -3,10 +3,11 @@ module DSL where
 import Core
 import Control.Monad.Trans.Accum
 import qualified Data.Text as T
-import Data.Functor.Identity
 
 -- Rule list used for execution
 newtype Rules = Rules [Rewrite RValue]
+
+unrules (Rules rewrites) = rewrites
 
 instance Show Rules where
     show (Rules rewrites) = unlines . concat $ [
