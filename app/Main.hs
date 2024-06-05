@@ -8,11 +8,8 @@ rules = makeRules $ do
     rule (psym "hello") (psym "world")
     rule (pbranch [pnum 1, pvar "a", pnum 3]) (pbranch [pnum 3, pvar "a", pnum 1])
 
-oneRule = case makeRules (rule (psym "hello") (psym "world")) of
-    Rules rs -> head rs
-
 input :: Tree RValue
-input = Branch [Leaf (RSymbol "hello"), Leaf (RSymbol "world!")]
+input = rbranch [rsym "hello", rsym "world!", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
 
 main :: IO ()
 main = do
