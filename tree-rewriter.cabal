@@ -27,6 +27,7 @@ library
   exposed-modules:
       Core
       DSL
+      TH
   other-modules:
       Paths_tree_rewriter
   autogen-modules:
@@ -35,10 +36,14 @@ library
       src
   default-extensions:
       OverloadedStrings
+      TemplateHaskell
+      QuasiQuotes
+      DeriveLift
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
     , containers
+    , template-haskell
     , text
     , transformers
   default-language: Haskell2010
@@ -53,10 +58,14 @@ executable tree-rewriter-exe
       app
   default-extensions:
       OverloadedStrings
+      TemplateHaskell
+      QuasiQuotes
+      DeriveLift
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
+    , template-haskell
     , text
     , transformers
     , tree-rewriter
@@ -73,10 +82,14 @@ test-suite tree-rewriter-test
       test
   default-extensions:
       OverloadedStrings
+      TemplateHaskell
+      QuasiQuotes
+      DeriveLift
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
+    , template-haskell
     , text
     , transformers
     , tree-rewriter

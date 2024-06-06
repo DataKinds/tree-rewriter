@@ -24,6 +24,7 @@ dependencies:
 - text
 - transformers
 - containers
+- template-haskell
 
 ghc-options:
 - -Wall
@@ -38,6 +39,9 @@ ghc-options:
 
 default-extensions:
 - OverloadedStrings
+- TemplateHaskell
+- QuasiQuotes
+- DeriveLift
 
 library:
   source-dirs: src

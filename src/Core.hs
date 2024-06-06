@@ -4,19 +4,20 @@ import qualified Data.Text as T
 import Data.Maybe
 import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy
-import Control.Monad.Trans.Class
 import Debug.Trace
-import Control.Monad (zipWithM, when)
+import Control.Monad (zipWithM)
+import Language.Haskell.TH.Syntax
+
 
 -- Rewritable / runtime values
-data RValue = RSymbol T.Text | RString T.Text | RNumber Integer
+data RValue = RSymbol T.Text | RString T.Text | RNumber Integer deriving (Lift)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RNumber t) = show t
 
-data Tree a = Branch [Tree a] | Leaf a
+data Tree a = Branch [Tree a] | Leaf a deriving (Lift)
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
@@ -33,7 +34,7 @@ instance (Show a) => Show (Tree a) where
     show = prettyprint
 
 -- Matchable patterns with holes for variables
-data Pattern a = PExact a | PVariable T.Text 
+data Pattern a = PExact a | PVariable T.Text deriving (Lift)
 
 instance Show a => Show (Pattern a) where
     show (PExact a) = show a

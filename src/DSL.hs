@@ -41,6 +41,8 @@ type Ruleset = Accum Rules ()
 rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
 rule pattern template = add . Rules . pure $ Rewrite pattern template
 
+(~>) = rule
+
 -- Pattern leafs
 pleaf :: a -> Tree (Pattern a)
 pleaf = Leaf . PExact
