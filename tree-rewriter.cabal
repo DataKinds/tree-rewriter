@@ -43,6 +43,7 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , parsec
     , template-haskell
     , text
     , transformers
@@ -65,6 +66,7 @@ executable tree-rewriter-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , parsec
     , template-haskell
     , text
     , transformers
@@ -89,6 +91,7 @@ test-suite tree-rewriter-test
   build-depends:
       base >=4.7 && <5
     , containers
+    , parsec
     , template-haskell
     , text
     , transformers

@@ -3,6 +3,10 @@ module TH where
 import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 import DSL
+import Text.Parsec
+
+patternLiteral :: Parser String u (Q Exp)
+patternLiteral = undefined
 
 -- Quasiquote helpers --
 patternParser :: String -> Q Exp

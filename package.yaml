@@ -25,6 +25,7 @@ dependencies:
 - transformers
 - containers
 - template-haskell
+- parsec
 
 ghc-options:
 - -Wall
