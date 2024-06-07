@@ -14,7 +14,7 @@ rules = makeRules $ do
     [a|(false) ~> false|]
 
 input :: Tree RValue
-input = rbranch [rsym "hello", rsym "world!", rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
+input = rbranch [rsym "hello", rsym "world!", rbranch [rsym "true"], rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
 
 main :: IO ()
 main = do
