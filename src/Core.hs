@@ -2,12 +2,10 @@ module Core where
 
 import qualified Data.Text as T
 import Data.Maybe
+import Data.List ( intercalate )
 import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy
-import Debug.Trace
 import Control.Monad (zipWithM)
-import Language.Haskell.TH.Syntax
-
 
 -- Rewritable / runtime values
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer deriving (Lift)
@@ -24,7 +22,7 @@ prettyprint = pp 0
     where  
         pp 0 (Leaf a) = show a
         pp d (Leaf a) = replicate d ' ' ++ "- " ++ show a
-        pp d (Branch as) = unlines $ map (pp $ d+1) as
+        pp d (Branch as) = intercalate "\n" $ map (pp $ d+1) as
 
 sexprprint :: Show a => Tree a -> String
 sexprprint (Leaf a) = show a

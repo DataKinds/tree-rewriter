@@ -41,6 +41,7 @@ type Ruleset = Accum Rules ()
 rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
 rule pattern template = add . Rules . pure $ Rewrite pattern template
 
+(~>) :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
 (~>) = rule
 
 -- Pattern leafs

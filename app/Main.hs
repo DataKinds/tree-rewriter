@@ -10,12 +10,12 @@ rules = makeRules $ do
     pbranch [[a|.1|], [a|:a|], [a|.3|]] ~> pbranch [[a|.3|], [a|:a|], [a|.1|]]
 
 input :: Tree RValue
-input = rbranch [rsym "hello", rsym "world!", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
+input = rbranch [rsym "hello", rsym "world!", rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
 
 main :: IO ()
 main = do
     print rules
     putStrLn "Applying to input:"
     print input
-    putStrLn "Outcome:"
+    putStrLn "\nOutcome:"
     print $ run rules input
