@@ -42,7 +42,7 @@ instance Show a => Show (Pattern a) where
 data Rewrite a = Rewrite (Tree (Pattern a)) (Tree (Pattern a))
 
 instance Show a => Show (Rewrite a) where
-    show (Rewrite pattern template) = sexprprint pattern ++ " -> " ++ sexprprint template
+    show (Rewrite pattern template) = sexprprint pattern ++ " -to-> " ++ sexprprint template
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Return the variables bound on a successful application --
