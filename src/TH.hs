@@ -5,7 +5,7 @@ import Language.Haskell.TH.Quote
 import DSL
 import Text.Parsec
 
-patternLiteral :: Parser String u (Q Exp)
+patternLiteral :: Parsec String u (Q Exp)
 patternLiteral = undefined
 
 -- Quasiquote helpers --

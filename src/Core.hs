@@ -6,6 +6,7 @@ import Data.List ( intercalate )
 import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy
 import Control.Monad (zipWithM)
+import Language.Haskell.TH.Syntax
 
 -- Rewritable / runtime values
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer deriving (Lift)
