@@ -102,10 +102,9 @@ apply rval rr@(Rewrite pval template) = let
                 else let
                     (preMatch, matchAndPostMatch) = splitAt matchOffset rtrees
                     (_, postMatch) = splitAt matchLength matchAndPostMatch
-                    templatedLeaf = case betaReduce bindings template of
-                        leaf@(Leaf _) -> [leaf]
-                        (Branch bs) -> bs
-                in (Branch $ preMatch ++ templatedLeaf ++ postMatch, 1)
+                in case betaReduce bindings template of
+                    leaf@(Leaf _) -> (leaf, 1)
+                    (Branch bs) -> (Branch $ preMatch ++ bs ++ postMatch, 1) 
             -- We matched a leaf, we can rewrite directly
             Leaf _ -> (betaReduce bindings template, 1)
         -- We did not get a successful pattern match, let's recurse
