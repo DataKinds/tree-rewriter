@@ -4,7 +4,7 @@ import qualified Data.Text as T
 import Data.Maybe
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy
+import Control.Monad.Trans.State.Lazy ( State, modify, runState )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 
@@ -45,70 +45,45 @@ instance Show a => Show (Rewrite a) where
     show (Rewrite pattern template) = sexprprint pattern ++ " -to-> " ++ sexprprint template
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
--- Return the variables bound on a successful application --
-getMatchSuccess (m, _, _) = m
-getMatchLength (_, l, _) = l
-getMatchOffset (_, _, o) = o
-
---          Starting match offset  Pattern to match         Updated variable bindings, along with 3 things: 
---                  Input tree                              whether the match succeeded, and the match length and offset for branches only
-tryApply :: Int ->  Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text (Tree RValue)) (Bool, Int, Int)
+-- Statefully return the variables bound on a successful application --
+--          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
+tryApply :: Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text (Tree RValue)) Bool
 -- Bind pattern variables
-tryApply _ rval (Leaf (PVariable pvar)) = do
-    modify (M.insert pvar rval)
-    pure (True, 1, 0)
--- Match branches, and try branch tails if we fail
-tryApply o (Branch []) (Branch []) = pure (True, 0, o)
-tryApply _ (Branch []) _ = pure (False, 0, 0)
-tryApply o (Branch rtrees) pattern@(Branch pvals)
-    | length rtrees > length pvals = do
-        success <- all getMatchSuccess <$> zipWithM (tryApply o) rtrees pvals
-        if success then pure (True, length pvals, o)
-        -- We failed to match at the head of this branch, let's try its tail
-        else tryApply (o+1) (Branch $ tail rtrees) pattern
-    -- No point to checking the branch tail since we know the pattern length
-    | length rtrees == length pvals = do
-        success <- all getMatchSuccess <$> zipWithM (tryApply 0) rtrees pvals
-        pure (success, length pvals, o)
-    | otherwise = pure (False, 0, o)
+tryApply rval (Leaf (PVariable pvar)) = modify (M.insert pvar rval) >> pure True
+-- Match ntree branch patterns exactly
+tryApply (Branch []) (Branch []) = pure True
+tryApply (Branch []) _ = pure False
+tryApply (Branch rtrees) (Branch pvals)
+    -- No point to checking patterns that match branches of the wrong length
+    | length rtrees /= length pvals = pure False
+    | otherwise = and <$> zipWithM tryApply rtrees pvals
 -- Match symbol patterns
-tryApply _ (Leaf (RSymbol rsym)) (Leaf (PExact (RSymbol psym)))
-    | rsym == psym = pure (True, 1, 0)
-    | otherwise = pure (False, 1, 0)
+tryApply (Leaf (RSymbol rsym)) (Leaf (PExact (RSymbol psym)))
+    | rsym == psym = pure True
+    | otherwise = pure False
 -- Match number patterns
-tryApply _ (Leaf (RNumber rnum)) (Leaf (PExact (RNumber pnum)))
-    | rnum == pnum = pure (True, 1, 0)
-    | otherwise = pure (False, 1, 0)
+tryApply (Leaf (RNumber rnum)) (Leaf (PExact (RNumber pnum)))
+    | rnum == pnum = pure True
+    | otherwise = pure False
 -- Match string patterns (TODO: use regex)
-tryApply _ (Leaf (RString rstr)) (Leaf (PExact (RString pstr)))
-    | rstr == pstr = pure (True, 1, 0)
-    | otherwise = pure (False, 1, 0)
+tryApply (Leaf (RString rstr)) (Leaf (PExact (RString pstr)))
+    | rstr == pstr = pure True
+    | otherwise = pure False
 -- Catch failed matches
-tryApply _ _ _ = pure (False, 0, 0)
+tryApply _ _ = pure False
     
 
 -- DFS the input tree to try applying a rewrite rule anywhere it's possible --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rewrite RValue -> (Tree RValue, Integer)
 apply rval rr@(Rewrite pval template) = let
-    ((success, matchLength, matchOffset), bindings) = runState (tryApply 0 rval pval) mempty
-    in templateOrRecurse (success, matchLength, matchOffset) bindings
+    (success, bindings) = runState (tryApply rval pval) mempty
+    in templateOrRecurse success bindings
     where
-        -- We got a successful pattern match, let's rewrite to the template
-        templateOrRecurse (True, matchLength, matchOffset) bindings = case rval of
-            -- We matched a branch, we must be careful to only rewrite based on matchLength and matchOffset
-            Branch rtrees -> if matchLength == length rtrees
-                then (betaReduce bindings template, 1) 
-                else let
-                    (preMatch, matchAndPostMatch) = splitAt matchOffset rtrees
-                    (_, postMatch) = splitAt matchLength matchAndPostMatch
-                in case betaReduce bindings template of
-                    leaf@(Leaf _) -> (leaf, 1)
-                    (Branch bs) -> (Branch $ preMatch ++ bs ++ postMatch, 1) 
-            -- We matched a leaf, we can rewrite directly
-            Leaf _ -> (betaReduce bindings template, 1)
-        -- We did not get a successful pattern match, let's recurse
-        templateOrRecurse (False, _, _) _ = case rval of
+
+        -- We got a successful branch pattern match, let's rewrite to the template
+        templateOrRecurse True bindings = (betaReduce bindings template, 1)
+        templateOrRecurse False _ = case rval of
             -- If we failed to match a nub branch, we give it back unchanged
             Branch [] -> (rval, 0)
             -- If we failed to match an inhabited branch, let's match the branch's children
