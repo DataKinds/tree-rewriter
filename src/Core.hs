@@ -80,7 +80,6 @@ apply rval rr@(Rewrite pval template) = let
     (success, bindings) = runState (tryApply rval pval) mempty
     in templateOrRecurse success bindings
     where
-
         -- We got a successful branch pattern match, let's rewrite to the template
         templateOrRecurse True bindings = (betaReduce bindings template, 1)
         templateOrRecurse False _ = case rval of

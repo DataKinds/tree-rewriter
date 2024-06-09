@@ -7,6 +7,7 @@ import TH
 rules :: Rules
 rules = makeRules $ do
     [a|hello ~> world|]
+    [a|(.1 :asd) ~> (.3 :asd)|]
     [a|(.1 :a .3) ~> (.3 :a .1)|]
     [a|(if true then :a else :b) ~> :a|]
     [a|(if false then :a else :b) ~> :b|]
