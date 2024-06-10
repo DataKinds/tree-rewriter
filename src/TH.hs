@@ -62,7 +62,9 @@ listParser = flex $ do
     _ <- flex . string $ "["
     lits <- many patternLiteralParser
     _ <- flex . string $ "]"
-    -- out <- foldr (\lit acc -> pbranch)
+    let empty = [| pbranch [] |] :: Q Exp
+        cons x xs = appE (dyn "pbranch") (listE [])
+    -- out <- foldr (\lit acc -> appE )
     return [| pbranch $(listE lits) |]
 
 patternParser :: Parser (Q Exp)

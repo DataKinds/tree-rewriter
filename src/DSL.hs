@@ -35,7 +35,8 @@ rbranch :: [Tree a] -> Tree a
 rbranch = Branch
 
 -- Ruleset: Pattern and template building eDSL --
-type Ruleset = Accum Rules ()
+type WithRules = Accum Rules
+type Ruleset = WithRules ()
 
 -- Rewriting rule
 rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
