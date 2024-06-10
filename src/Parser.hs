@@ -11,7 +11,7 @@ import Control.Monad
 import Control.Applicative (some)
 
 -- A parser that records rule definitions as they come.
-type RuleParser = Parsec String Rules
+type RuleParser = ParsecT String () WithRules
 
 flex :: ParsecT String u m a -> ParsecT String u m a
 flex p = p <* spaces
@@ -82,7 +82,7 @@ ruleParser = flex $ do
     return $ pbranch [pat, psym "~>", template]
 
 parsePattern :: String -> Either String (Tree (Pattern RValue))
-parsePattern pat = case (runParser parser mempty "" pat) of
+parsePattern pat = case (runParserT parser mempty "" pat) of
     Left err -> Left $ show err
     Right pat -> Right pat
     where
