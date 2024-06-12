@@ -35,7 +35,8 @@ rbranch :: [Tree a] -> Tree a
 rbranch = Branch
 
 -- Ruleset: Pattern and template building eDSL --
-type Ruleset = Accum Rules ()
+type WithRuleset = Accum Rules 
+type Ruleset = WithRuleset ()
 
 -- Rewriting rule
 rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
@@ -64,7 +65,7 @@ pvar = Leaf . PVariable . T.pack
 
 -- Running Ruleset --
 -- Create a rules object from the Ruleset eDSL
-makeRules :: Ruleset -> Rules 
+makeRules :: WithRuleset a -> Rules 
 makeRules = flip execAccum mempty
 
 run :: Rules -> Tree RValue -> Tree RValue

@@ -4,89 +4,101 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 import DSL
 import Text.Parsec
-import Text.Parsec.String
 import Data.Char
 import Control.Monad
 import Control.Applicative (some)
+import Core 
+import Language.Haskell.TH.Syntax
+import Control.Monad.Trans.Accum
 
-flex :: Parser a -> Parser a
+
+type RuleParser = ParsecT String () WithRuleset
+
+flex :: RuleParser a -> RuleParser a
 flex p = p <* spaces
 
-psymStartParser :: Parser Char
-psymStartParser = satisfy (`notElem` ("()[]~-" :: String))
+psymStartParser :: RuleParser Char
+psymStartParser = satisfy (`notElem` (":/.()[]~-" :: String))
 
-psymCharParser :: Parser Char
-psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` ("()[]~-" :: String)))
+psymCharParser :: RuleParser Char
+psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]~-" :: String)))
 
-psymRawParser :: Parser String
+psymRawParser :: RuleParser String
 psymRawParser = do
     start <- psymStartParser
     rest <- many psymCharParser
     return (start:rest)
 
-psymParser :: Parser (Q Exp)
-psymParser = flex $ do
-    sym <- psymRawParser
-    return [| psym sym |]
+psymParser :: RuleParser (Tree (Pattern RValue))
+psymParser = flex (psym <$> psymRawParser)
 
-pvarParser :: Parser (Q Exp)
-pvarParser = flex $ do
-    _ <- char ':'
-    sym <- psymRawParser
-    return [| pvar sym |]
+pvarParser :: RuleParser (Tree (Pattern RValue))
+pvarParser = flex (char ':' *> (pvar <$> psymRawParser))
 
-pstrParser :: Parser (Q Exp)
-pstrParser = flex $ do
-    _ <- char '/'
-    sym <- psymRawParser
-    return [| pstr sym |]
+pstrParser :: RuleParser (Tree (Pattern RValue))
+pstrParser = flex (char '/' *> (pstr <$> psymRawParser))
 
-pnumParser :: Parser (Q Exp)
-pnumParser = flex $ do
-    _ <- char '.'
-    num <- many1 $ satisfy isDigit
-    return [| pnum . read $ num |]
+pnumParser :: RuleParser (Tree (Pattern RValue))
+pnumParser = flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
 
-patternLiteralParser :: Parser (Q Exp)
+patternLiteralParser :: RuleParser (Tree (Pattern RValue))
 patternLiteralParser = choice [branchParser, pvarParser, pstrParser, pnumParser, psymParser]
 
-branchParser :: Parser (Q Exp)
+branchParser :: RuleParser (Tree (Pattern RValue))
 branchParser = flex $ do
     _ <- flex . string $ "("
     lits <- many patternLiteralParser
     _ <- flex . string $ ")"
-    return [| pbranch $(listE lits) |]
+    return $ pbranch lits
 
-listParser :: Parser (Q Exp)
+listParser :: RuleParser (Tree (Pattern RValue))
 listParser = flex $ do
     _ <- flex . string $ "["
     lits <- many patternLiteralParser
     _ <- flex . string $ "]"
     -- out <- foldr (\lit acc -> pbranch)
-    return [| pbranch $(listE lits) |]
+    return $ pbranch lits -- TODO
 
-patternParser :: Parser (Q Exp)
+patternParser :: RuleParser (Tree (Pattern RValue))
 patternParser = try branchParser <|> try patternLiteralParser
 
-patternRuleParser :: Parser (Q Exp)
+patternRuleParser :: RuleParser ()
 patternRuleParser = flex $ do
     pat <- patternParser
     _ <- flex $ string "~>"
     template <- patternParser
-    return [| $(pat) ~> $(template) |]
+    _ <- return $ pat ~> template
+    pure ()
 
 -- Quasiquote helpers --
-parsePattern :: String -> Q Exp
-parsePattern pat = case (parse parser "" pat) of 
-    Left err -> error . show $ err
-    Right q -> q
+treeToQ :: Lift a => RuleParser a -> RuleParser (Q Exp)
+treeToQ par = do 
+    out <- par
+    return [| out |]
+
+quoteRuleParser :: RuleParser (Q Exp)
+quoteRuleParser = flex $ do
+    pat <- treeToQ patternParser
+    _ <- flex $ string "~>"
+    template <- treeToQ patternParser
+    pure [| $(pat) ~> $(template) |]
+
+quotePattern :: String -> Q Exp
+quotePattern pat = let
+    parseM = runParserT parser () "" pat
+    (parsed, _) = runAccum parseM mempty
+    in case parsed of 
+        Left err -> error . show $ err
+        Right q -> q
     where
-        parser = spaces *> (try patternRuleParser <|> try patternParser)
+        parser1 = try quoteRuleParser 
+        parser2 = treeToQ $ try patternParser 
+        parser = spaces *> (parser1 <|> parser2)
 
 -- pAttern (p was taken...)
 a :: QuasiQuoter
 a = QuasiQuoter {
-    quoteExp = parsePattern,
+    quoteExp = quotePattern,
     quotePat = undefined,
     quoteType = undefined,
     quoteDec = undefined
