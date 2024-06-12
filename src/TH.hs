@@ -18,7 +18,7 @@ flex :: RuleParser a -> RuleParser a
 flex p = p <* spaces
 
 psymStartParser :: RuleParser Char
-psymStartParser = satisfy (`notElem` (":/.()[]~-" :: String))
+psymStartParser = satisfy (`notElem` (",:/.()[]~-" :: String))
 
 psymCharParser :: RuleParser Char
 psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]~-" :: String)))
@@ -48,16 +48,22 @@ branchParser innerLit = flex $ do
     _ <- flex . string $ ")"
     return lits
 
-listParser :: RuleParser a -> RuleParser [a]
+listParser :: RuleParser a -> RuleParser ([a], Maybe a)
 listParser innerLit = flex $ do
     _ <- flex . string $ "["
-    lits <- many innerLit
+    lits <- many (try innerLit)
+    endLit <- optionMaybe (string "," *> innerLit)
     _ <- flex . string $ "]"
-    return lits
+    return (lits, endLit)
 
 
 pbranchParser = pbranch <$> branchParser patternLiteralParser
-plistParser = foldr (\lit cons -> pbranch [lit, cons]) (pbranch []) <$> listParser patternLiteralParser
+plistParser = do
+    (lits, optFinal) <- listParser patternLiteralParser
+    let final = case optFinal of
+            Just final' -> final'
+            Nothing -> pbranch []
+    return $ foldr (\lit cons -> pbranch [lit, cons]) final lits
 psymParser = psym <$> symParser
 pvarParser = pvar <$> varParser
 pstrParser = pstr <$> strParser
@@ -70,14 +76,11 @@ rnumParser = rnum . read <$> numParser
 patternLiteralParser :: RuleParser (Tree (Pattern RValue))
 patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
-patternParser :: RuleParser (Tree (Pattern RValue))
-patternParser = try pbranchParser <|> try patternLiteralParser
-
 patternRuleParser :: RuleParser ()
 patternRuleParser = flex $ do
-    pat <- patternParser
+    pat <- patternLiteralParser
     _ <- flex $ string "~>"
-    template <- patternParser
+    template <- patternLiteralParser
     _ <- return $ pat ~> template
     pure ()
 
@@ -89,9 +92,9 @@ treeToQ par = do
 
 quoteRuleParser :: RuleParser (Q Exp)
 quoteRuleParser = flex $ do
-    pat <- treeToQ patternParser
+    pat <- treeToQ patternLiteralParser
     _ <- flex $ string "~>"
-    template <- treeToQ patternParser
+    template <- treeToQ patternLiteralParser
     pure [| $(pat) ~> $(template) |]
 
 quotePattern :: String -> Q Exp
@@ -103,7 +106,7 @@ quotePattern pat = let
         Right q -> q
     where
         parser1 = try quoteRuleParser 
-        parser2 = treeToQ $ try patternParser 
+        parser2 = treeToQ $ try patternLiteralParser 
         parser = spaces *> (parser1 <|> parser2)
 
 -- pAttern (p was taken...)
