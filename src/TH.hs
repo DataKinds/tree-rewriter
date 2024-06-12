@@ -29,38 +29,49 @@ psymRawParser = do
     rest <- many psymCharParser
     return (start:rest)
 
-psymParser :: RuleParser (Tree (Pattern RValue))
-psymParser = flex (psym <$> psymRawParser)
+symParser :: RuleParser String
+symParser = flex psymRawParser
 
-pvarParser :: RuleParser (Tree (Pattern RValue))
-pvarParser = flex (char ':' *> (pvar <$> psymRawParser))
+varParser :: RuleParser String
+varParser = flex (char ':' *> psymRawParser)
 
-pstrParser :: RuleParser (Tree (Pattern RValue))
-pstrParser = flex (char '/' *> (pstr <$> psymRawParser))
+strParser :: RuleParser String
+strParser = flex (char '/' *> psymRawParser)
 
-pnumParser :: RuleParser (Tree (Pattern RValue))
-pnumParser = flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
+numParser :: RuleParser String
+numParser = flex (char '.' *> many1 (satisfy isDigit))
+
+branchParser :: RuleParser a -> RuleParser [a]
+branchParser innerLit = flex $ do
+    _ <- flex . string $ "("
+    lits <- many innerLit
+    _ <- flex . string $ ")"
+    return lits
+
+listParser :: RuleParser a -> RuleParser [a]
+listParser innerLit = flex $ do
+    _ <- flex . string $ "["
+    lits <- many innerLit
+    _ <- flex . string $ "]"
+    return lits
+
+
+pbranchParser = pbranch <$> branchParser patternLiteralParser
+plistParser = foldr (\lit cons -> pbranch [lit, cons]) (pbranch []) <$> listParser patternLiteralParser
+psymParser = psym <$> symParser
+pvarParser = pvar <$> varParser
+pstrParser = pstr <$> strParser
+pnumParser = pnum . read <$> numParser
+
+rsymParser = rsym <$> symParser
+rstrParser = rstr <$> strParser
+rnumParser = rnum . read <$> numParser
 
 patternLiteralParser :: RuleParser (Tree (Pattern RValue))
-patternLiteralParser = choice [branchParser, pvarParser, pstrParser, pnumParser, psymParser]
-
-branchParser :: RuleParser (Tree (Pattern RValue))
-branchParser = flex $ do
-    _ <- flex . string $ "("
-    lits <- many patternLiteralParser
-    _ <- flex . string $ ")"
-    return $ pbranch lits
-
-listParser :: RuleParser (Tree (Pattern RValue))
-listParser = flex $ do
-    _ <- flex . string $ "["
-    lits <- many patternLiteralParser
-    _ <- flex . string $ "]"
-    -- out <- foldr (\lit acc -> pbranch)
-    return $ pbranch lits -- TODO
+patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
 patternParser :: RuleParser (Tree (Pattern RValue))
-patternParser = try branchParser <|> try patternLiteralParser
+patternParser = try pbranchParser <|> try patternLiteralParser
 
 patternRuleParser :: RuleParser ()
 patternRuleParser = flex $ do
