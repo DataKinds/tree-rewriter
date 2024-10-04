@@ -3,6 +3,7 @@ module Main (main) where
 import Core
 import DSL
 import TH
+import Data.Maybe (fromJust)
 
 rules :: Rules
 rules = makeRules $ do
@@ -18,6 +19,8 @@ rules = makeRules $ do
 
 input :: Tree RValue
 input = rbranch [rsym "hello", rsym "world!", rbranch [rsym "true"], rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
+input2 :: Tree RValue
+input2 = fromJust . unpattern $ [a|(hello world)|]
 
 main :: IO ()
 main = do

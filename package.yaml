@@ -37,6 +37,7 @@ ghc-options:
 - -Wmissing-home-modules
 - -Wpartial-fields
 - -Wredundant-constraints
+- -Wno-missing-export-lists
 
 default-extensions:
 - OverloadedStrings

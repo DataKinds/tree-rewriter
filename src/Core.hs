@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 module Core where
 
 import qualified Data.Text as T
@@ -16,7 +18,7 @@ instance Show RValue where
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RNumber t) = show t
 
-data Tree a = Branch [Tree a] | Leaf a deriving (Lift)
+data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable)
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
@@ -39,7 +41,15 @@ instance Show a => Show (Pattern a) where
     show (PExact a) = show a
     show (PVariable t) = ':':T.unpack t
 
-data Rewrite a = Rewrite (Tree (Pattern a)) (Tree (Pattern a))
+-- Tree rewrite rule datatype
+-- Parameterized on leaf type
+data Rewrite a = Rewrite (Tree (Pattern a)) (Tree (Pattern a)) deriving (Lift)
+
+unpattern :: Tree (Pattern a) -> Maybe (Tree a)
+unpattern = traverse f
+    where
+        f (PVariable _) = Nothing
+        f (PExact a) = Just a
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern template) = sexprprint pattern ++ " -to-> " ++ sexprprint template

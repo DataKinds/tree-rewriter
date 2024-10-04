@@ -39,8 +39,11 @@ type WithRuleset = Accum Rules
 type Ruleset = WithRuleset ()
 
 -- Rewriting rule
+addRule :: Rewrite RValue -> Ruleset
+addRule = add . Rules . pure
+
 rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
-rule pattern template = add . Rules . pure $ Rewrite pattern template
+rule pattern template = addRule $ Rewrite pattern template
 
 (~>) :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
 (~>) = rule
