@@ -10,10 +10,14 @@ import Text.Parsec
       many,
       many1,
       try,
+      unexpected,
       ParsecT )
-import DSL ( WithRuleset, psym, pstr, pnum, pbranch, pvar )
-import Core ( Pattern, Tree, RValue, Rewrite (Rewrite) ) 
+import DSL ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
+import Core ( Pattern, Tree, RValue, Rewrite (Rewrite), unpattern ) 
 import Data.Char ( isSpace, isDigit )
+import Control.Applicative (Alternative(some))
+import Control.Monad (liftM)
+import Control.Monad.Trans.Class (lift)
 
 
 
@@ -44,7 +48,7 @@ pstrParser :: RuleParser (Tree (Pattern RValue))
 pstrParser = flex (char '/' *> (pstr <$> psymRawParser))
 
 pnumParser :: RuleParser (Tree (Pattern RValue))
-pnumParser = try$flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
+pnumParser = try $ flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
 
 patternLiteralParser :: RuleParser (Tree (Pattern RValue))
 patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
@@ -61,9 +65,9 @@ ptailListParser :: RuleParser (Tree (Pattern RValue))
 ptailListParser = flex $ do
     _ <- flex . string $ "["
     lits <- many patternLiteralParser
-    tail <- string ".." *> pvarParser
+    tail' <- string ".." *> pvarParser
     _ <- flex . string $ "]"
-    return $ foldr cons tail lits
+    return $ foldr cons tail' lits
         where
             cons x xs = pbranch [x, xs]
 
@@ -78,10 +82,22 @@ plistParser = flex $ do
             cons x xs = pbranch [x, xs]
 
 patternParser :: RuleParser (Tree (Pattern RValue))
-patternParser = try pbranchParser <|> try ptailListParser <|> try patternLiteralParser
+patternParser = try ptailListParser <|> try patternLiteralParser
 
 patternRuleParser :: RuleParser (Rewrite RValue)
 patternRuleParser = flex $ do
-    pat <- patternParser
+    pattern <- patternParser
     _ <- flex $ string "~>"
-    Rewrite pat <$> patternParser -- template
+    template <- patternParser -- template
+    let rule = Rewrite pattern template
+    lift $ addRule rule
+    pure rule
+
+programParser :: RuleParser [Tree RValue]
+programParser = many . flex $ do 
+    _ <- many $ try patternRuleParser
+    pat <- patternParser
+    _ <- many $ try patternRuleParser
+    case unpattern pat of 
+        (Just rval) -> pure rval
+        Nothing -> unexpected "variable in runtime value"

@@ -1,0 +1,20 @@
+hello ~> world
+(.1 :asd) ~> (.3 :asd)
+(.1 :a .3) ~> (.3 :a .1)
+[.1 .2 :a :b] ~> [:a :b]
+[.1 .2 :a ..:b] ~> [:a ..:b]
+(if t then :a else :b) ~> :a
+(if f then :a else :b) ~> :b
+(t) ~> t
+(f) ~> f
+(t and t) ~> t
+(t and f) ~> f
+(f and t) ~> f
+(f and f) ~> f
+[is a ..:tail] ~> [a is ..:tail]
+
+(hello world)
+[this is a cons list]
+[.0 .1 .2 .3 .4 .5 .6 .7 .8 .9]
+(if (t and f) then (ITS TRUE) else (ITS FALSE))
+(t) t
