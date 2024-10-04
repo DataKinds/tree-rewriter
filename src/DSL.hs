@@ -62,7 +62,7 @@ pnum = pleaf . RNumber
 pbranch :: [Tree (Pattern a)] -> Tree (Pattern a)
 pbranch = Branch
 
--- Pattern variable
+-- Pattern variables 
 pvar :: String -> Tree (Pattern a) 
 pvar = Leaf . PVariable . T.pack
 

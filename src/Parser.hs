@@ -44,7 +44,7 @@ pstrParser :: RuleParser (Tree (Pattern RValue))
 pstrParser = flex (char '/' *> (pstr <$> psymRawParser))
 
 pnumParser :: RuleParser (Tree (Pattern RValue))
-pnumParser = flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
+pnumParser = try$flex (char '.' *> (pnum . read <$> many1 (satisfy isDigit)))
 
 patternLiteralParser :: RuleParser (Tree (Pattern RValue))
 patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
@@ -56,16 +56,29 @@ pbranchParser = flex $ do
     _ <- flex . string $ ")"
     return $ pbranch lits
 
+-- parses [1 2 3 4 ..:a]
+ptailListParser :: RuleParser (Tree (Pattern RValue))
+ptailListParser = flex $ do
+    _ <- flex . string $ "["
+    lits <- many patternLiteralParser
+    tail <- string ".." *> pvarParser
+    _ <- flex . string $ "]"
+    return $ foldr cons tail lits
+        where
+            cons x xs = pbranch [x, xs]
+
+-- parses [1 2 (3) :a 4]
 plistParser :: RuleParser (Tree (Pattern RValue))
 plistParser = flex $ do
     _ <- flex . string $ "["
     lits <- many patternLiteralParser
     _ <- flex . string $ "]"
-    -- out <- foldr (\lit acc -> pbranch)
-    return $ pbranch lits -- TODO
+    return $ foldr cons (pbranch []) lits
+        where
+            cons x xs = pbranch [x, xs]
 
 patternParser :: RuleParser (Tree (Pattern RValue))
-patternParser = try pbranchParser <|> try patternLiteralParser
+patternParser = try pbranchParser <|> try ptailListParser <|> try patternLiteralParser
 
 patternRuleParser :: RuleParser (Rewrite RValue)
 patternRuleParser = flex $ do
