@@ -55,7 +55,7 @@ runProg prog filepath = let
 main :: IO ()
 main = do
     args <- getArgs
-    let progPath = "sample/main.tree"
+    let progPath = unwords args
     putStrLn $ "reading " ++ progPath
     prog <- I.readFile progPath
     -- putStrLn . T.unpack $ prog
