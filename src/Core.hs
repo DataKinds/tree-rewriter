@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE LambdaCase #-}
 module Core where
 
 import qualified Data.Text as T
@@ -43,7 +44,7 @@ instance Show a => Show (Pattern a) where
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
-data Rewrite a = Rewrite (Tree (Pattern a)) (Tree (Pattern a)) deriving (Lift)
+data Rewrite a = Rewrite (Tree (Pattern a)) [Tree (Pattern a)] deriving (Lift)
 
 unpattern :: Tree (Pattern a) -> Maybe (Tree a)
 unpattern = traverse f
@@ -52,14 +53,14 @@ unpattern = traverse f
         f (PExact a) = Just a
 
 instance Show a => Show (Rewrite a) where
-    show (Rewrite pattern template) = sexprprint pattern ++ " -to-> " ++ sexprprint template
+    show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
 --          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
-tryApply :: Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text (Tree RValue)) Bool
+tryApply :: Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text [Tree RValue]) Bool
 -- Bind pattern variables
-tryApply rval (Leaf (PVariable pvar)) = modify (M.insert pvar rval) >> pure True
+tryApply rval (Leaf (PVariable pvar)) = modify (M.alter (pure . \case { Nothing -> [rval] ; (Just bindings) -> rval:bindings }) pvar) >> pure True
 -- Match ntree branch patterns exactly
 tryApply (Branch []) (Branch []) = pure True
 tryApply (Branch []) _ = pure False
@@ -85,43 +86,44 @@ tryApply _ _ = pure False
 
 -- DFS the input tree to try applying a rewrite rule anywhere it's possible --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rewrite RValue -> (Tree RValue, Integer)
-apply rval rr@(Rewrite pval template) = let
+apply :: Tree RValue -> Rewrite RValue -> ([Tree RValue], Integer)
+apply rval rr@(Rewrite pval templates) = let
     (success, bindings) = runState (tryApply rval pval) mempty
     in templateOrRecurse success bindings
     where
-        -- We got a successful branch pattern match, let's rewrite to the template
-        templateOrRecurse True bindings = (betaReduce bindings template, 1)
+        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> ([Tree RValue], Integer)
+        -- We got a successful branch pattern match, let's rewrite to the template.
+        templateOrRecurse True bindings = (concatMap (betaReduce bindings) templates, 1)
         templateOrRecurse False _ = case rval of
             -- If we failed to match a nub branch, we give it back unchanged
-            Branch [] -> (rval, 0)
+            Branch [] -> ([rval], 0)
             -- If we failed to match an inhabited branch, let's match the branch's children
             Branch rtrees -> let
                 (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) (flip apply rr <$> rtrees)
-                in (Branch rtrees', count)
+                in ([Branch . concat $ rtrees'], count)
             -- If we failed to match a single runtime value, we give it back unchanged
-            Leaf _ -> (rval, 0)
+            Leaf _ -> ([rval], 0)
 
--- Fill in variable bindings inside a pattern
+-- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
-betaReduce :: M.Map T.Text (Tree RValue) -> Tree (Pattern RValue) -> Tree RValue
-betaReduce bindings (Branch trees) = Branch . map (betaReduce bindings) $ trees
-betaReduce _ (Leaf (PExact pval)) = Leaf pval
+betaReduce :: M.Map T.Text [Tree RValue] -> Tree (Pattern RValue) -> [Tree RValue]
+betaReduce bindings (Branch trees) = [Branch . concatMap (betaReduce bindings) $ trees]
+betaReduce _ (Leaf (PExact pval)) = [Leaf pval]
 betaReduce bindings (Leaf (PVariable pvar)) = case bindings M.!? pvar of
-    Just rval -> rval
+    Just rvals -> reverse rvals
     Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
 
 -- Nothing if no rewrites applied
-applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe (Tree RValue)
+-- Just the new runtime values if a rewrite applied
+applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe [Tree RValue]
 applyRewrites rval = listToMaybe . mapMaybe maybeApply
     where
-        maybeApply :: Rewrite RValue -> Maybe (Tree RValue)
+        maybeApply :: Rewrite RValue -> Maybe [Tree RValue]
         maybeApply rewrite = case apply rval rewrite of
             (_, 0) -> Nothing
-            (rval', _) -> Just rval'
+            (rvals', _) -> Just rvals'
 
-
-fix :: Tree RValue -> [Rewrite RValue] -> Tree RValue
+fix :: Tree RValue -> [Rewrite RValue] -> [Tree RValue]
 fix tree rewrites = case applyRewrites tree rewrites of 
-    Just tree' -> fix tree' rewrites
-    Nothing -> tree
+    Just tree' -> concatMap (`fix` rewrites) tree'
+    Nothing -> [tree]

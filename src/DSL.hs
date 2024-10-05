@@ -42,10 +42,10 @@ type Ruleset = WithRuleset ()
 addRule :: Rewrite RValue -> Ruleset
 addRule = add . Rules . pure
 
-rule :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
-rule pattern template = addRule $ Rewrite pattern template
+rule :: Tree (Pattern RValue) -> [Tree (Pattern RValue)] -> Ruleset
+rule pattern templates = addRule $ Rewrite pattern templates
 
-(~>) :: Tree (Pattern RValue) -> Tree (Pattern RValue) -> Ruleset
+(~>) :: Tree (Pattern RValue) -> [Tree (Pattern RValue)] -> Ruleset
 (~>) = rule
 
 -- Pattern leafs
@@ -71,8 +71,8 @@ pvar = Leaf . PVariable . T.pack
 makeRules :: WithRuleset a -> Rules 
 makeRules = flip execAccum mempty
 
-run :: Rules -> Tree RValue -> Tree RValue
+run :: Rules -> Tree RValue -> [Tree RValue]
 run (Rules rewrites) inputTree = fix inputTree rewrites
 
-runRuleset :: Ruleset -> Tree RValue -> Tree RValue
+runRuleset :: Ruleset -> Tree RValue -> [Tree RValue]
 runRuleset ruleset = run (makeRules ruleset)

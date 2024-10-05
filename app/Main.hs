@@ -50,7 +50,7 @@ runProg prog filepath = let
             print parsed
             print rules
             let rvals' = run rules <$> rvals
-            mapM_ (putStrLn . sexprprint) rvals'
+            (mapM_ . mapM_) (putStrLn . sexprprint) rvals'
 
 main :: IO ()
 main = do
