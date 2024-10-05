@@ -17,7 +17,10 @@
 (f xor t) ~> t
 (f xor f) ~> f
 [is a ..:tail] ~> [a is ..:tail]
-(+ :a :a :a :a) ~> :a
+(+ :?+ :?+ :?+ :?+) ~> :?+
+(* :?* :?*) ~> :?*
+(- :?-) ~> :?-
+(- :?- :?-) ~> :?-
 (split :a :a) ~> :a
 
 what (what) ((what))
@@ -28,4 +31,5 @@ what (what) ((what))
 (if (t and f) then (ITS TRUE) else (ITS FALSE))
 (if (t xor f) then (ITS TRUE) else (ITS FALSE))
 (t) t (aklsdj)
-(+ .1337 oh yeah baby)
+(- .420)
+(+ .1337 oh (- .420) (- .420))

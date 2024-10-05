@@ -31,7 +31,7 @@ olFlex :: RuleParser a -> RuleParser a
 olFlex p = p <* skipMany (satisfy (\c -> isSpace c && (c `notElem` ("\n\r" :: String))))
 
 psymCharParser :: RuleParser Char
-psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]~-" :: String)))
+psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]~" :: String)))
 
 psymRawParser :: RuleParser String
 psymRawParser = some psymCharParser 

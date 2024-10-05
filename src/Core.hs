@@ -109,9 +109,26 @@ apply rval rr@(Rewrite pval templates) = let
 betaReduce :: M.Map T.Text [Tree RValue] -> Tree (Pattern RValue) -> [Tree RValue]
 betaReduce bindings (Branch trees) = [Branch . concatMap (betaReduce bindings) $ trees]
 betaReduce _ (Leaf (PExact pval)) = [Leaf pval]
-betaReduce bindings (Leaf (PVariable pvar)) = case bindings M.!? pvar of
-    Just rvals -> reverse rvals
-    Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
+betaReduce bindings (Leaf (PVariable pvar)) 
+    | T.head pvar == '?' = 
+        -- pvar is a special accumulator, let's handle them
+        case pvar of
+            -- sum accumulator 
+            "?+" -> case bindings M.!? pvar of
+                Just rvals -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
+                Nothing -> []
+            -- product accumulator 
+            "?*" -> case bindings M.!? pvar of
+                Just rvals -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
+                Nothing -> []
+            -- negation accumulator 
+            "?-" -> case bindings M.!? pvar of
+                Just rvals -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
+                Nothing -> []
+            _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
+    | otherwise = case bindings M.!? pvar of
+        Just rvals -> reverse rvals
+        Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
 
 -- Nothing if no rewrites applied
 -- Just the new runtime values if a rewrite applied
