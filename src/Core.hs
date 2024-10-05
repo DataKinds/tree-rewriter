@@ -59,8 +59,28 @@ instance Show a => Show (Rewrite a) where
 -- Statefully return the variables bound on a successful application --
 --          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
 tryApply :: Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text [Tree RValue]) Bool
--- Bind pattern variables
-tryApply rval (Leaf (PVariable pvar)) = modify (M.alter (pure . \case { Nothing -> [rval] ; (Just bindings) -> rval:bindings }) pvar) >> pure True
+-- Bind pattern variables and special accumulators
+tryApply rval (Leaf (PVariable pvar)) 
+    -- Bind special accumulator
+    | T.head pvar == '?' = case pvar of
+        -- sum accumulator 
+        "?+" -> case rval of
+            num@(Leaf (RNumber _)) -> addBinding pvar num
+            _ -> pure False
+        -- product accumulator 
+        "?*" -> case rval of
+            num@(Leaf (RNumber _)) -> addBinding pvar num
+            _ -> pure False
+        -- negation accumulator 
+        "?-" -> case rval of
+            num@(Leaf (RNumber _)) -> addBinding pvar num
+            _ -> pure False
+        _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
+    -- Bind regular pattern variable
+    | otherwise = addBinding pvar rval
+    where
+        -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
+        addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
 -- Match ntree branch patterns exactly
 tryApply (Branch []) (Branch []) = pure True
 tryApply (Branch []) _ = pure False
@@ -110,8 +130,8 @@ betaReduce :: M.Map T.Text [Tree RValue] -> Tree (Pattern RValue) -> [Tree RValu
 betaReduce bindings (Branch trees) = [Branch . concatMap (betaReduce bindings) $ trees]
 betaReduce _ (Leaf (PExact pval)) = [Leaf pval]
 betaReduce bindings (Leaf (PVariable pvar)) 
+    -- Handle special accumulators
     | T.head pvar == '?' = 
-        -- pvar is a special accumulator, let's handle them
         case pvar of
             -- sum accumulator 
             "?+" -> case bindings M.!? pvar of
@@ -126,6 +146,7 @@ betaReduce bindings (Leaf (PVariable pvar))
                 Just rvals -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
                 Nothing -> []
             _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
+    -- Substitute pattern variable normally
     | otherwise = case bindings M.!? pvar of
         Just rvals -> reverse rvals
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
