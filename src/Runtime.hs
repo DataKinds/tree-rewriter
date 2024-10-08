@@ -1,4 +1,4 @@
-module DSL where
+module Runtime where
     
 import Core
 import Control.Monad.Trans.Accum
@@ -42,28 +42,28 @@ type Ruleset = WithRuleset ()
 addRule :: Rewrite RValue -> Ruleset
 addRule = add . Rules . pure
 
-rule :: Tree (Pattern RValue) -> [Tree (Pattern RValue)] -> Ruleset
+rule :: Tree RValue -> [Tree RValue] -> Ruleset
 rule pattern templates = addRule $ Rewrite pattern templates
 
-(~>) :: Tree (Pattern RValue) -> [Tree (Pattern RValue)] -> Ruleset
+(~>) :: Tree RValue -> [Tree RValue] -> Ruleset
 (~>) = rule
 
 -- Pattern leafs
-pleaf :: a -> Tree (Pattern a)
-pleaf = Leaf . PExact
-psym :: String -> Tree (Pattern RValue)
+pleaf :: a -> Tree a
+pleaf = Leaf
+psym :: String -> Tree RValue
 psym = pleaf . RSymbol . T.pack
-pstr :: String -> Tree (Pattern RValue)
+pstr :: String -> Tree RValue
 pstr = pleaf . RString . T.pack
-pnum :: Integer -> Tree (Pattern RValue)
+pnum :: Integer -> Tree RValue
 pnum = pleaf . RNumber
 
 -- Pattern branch
-pbranch :: [Tree (Pattern a)] -> Tree (Pattern a)
+pbranch :: [Tree a] -> Tree a
 pbranch = Branch
 
 -- Pattern variables 
-pvar :: String -> Tree (Pattern a) 
+pvar :: String -> Tree RValue
 pvar = Leaf . PVariable . T.pack
 
 -- Running Ruleset --
@@ -74,5 +74,26 @@ makeRules = flip execAccum mempty
 run :: Rules -> Tree RValue -> [Tree RValue]
 run (Rules rewrites) inputTree = fix inputTree rewrites
 
-runRuleset :: Ruleset -> Tree RValue -> [Tree RValue]
-runRuleset ruleset = run (makeRules ruleset)
+-- DFS a tree looking for definitions
+-- TODO
+eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
+eatDefs (Branch [pattern, Leaf (RSymbol "~>"), template]) = addRule (Rewrite pattern template) >> (pure $ pbranch [])
+eatDefs (Branch b:bs) = eatDefs b
+        
+
+
+-- Rewrite terms once, creating or modifying definitions as they arise
+runStep :: [Tree RValue] -> WithRuleset [Tree RValue]
+runStep [] = pure []
+runStep (tree:trees) = do 
+    (Rules rewrites) <- look
+    -- detect definitions
+    tree' <- eatDefs tree
+    rest <- runStep trees
+    return $ case applyRewrites tree' rewrites of 
+        Just tree'' -> tree''++rest
+        Nothing -> tree:rest
+    -- mapM (`fix` rewrites)
+
+-- runRuleset :: Ruleset -> Tree RValue -> [Tree RValue]
+-- runRuleset ruleset = run (makeRules ruleset)

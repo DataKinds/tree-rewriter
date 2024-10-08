@@ -1,7 +1,7 @@
 module Main (main) where
 
 import Core
-import DSL
+import Runtime
 import Parser
 import TH
 import Data.Maybe (fromJust)
@@ -27,10 +27,10 @@ rules1 = makeRules $ do
 
 input :: Tree RValue
 input = rbranch [rsym "hello", rsym "world!", rbranch [rsym "true"], rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
-input1 = fromJust . unpattern $ [a|(hello world! (true) reversethis (.4 .1  .2 .3 .5))|]
+input1 =  [a|(hello world! (true) reversethis (.4 .1  .2 .3 .5))|]
 input2 :: Tree RValue
-input2 = fromJust . unpattern $ [a|(hello world)|]
-input3 = fromJust . unpattern $ [a|(hello :world)|]
+input2 =  [a|(hello world)|]
+input3 = [a|(hello :world)|]
 
 test :: IO ()
 test = do

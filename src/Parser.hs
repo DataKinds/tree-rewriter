@@ -12,11 +12,11 @@ import Text.Parsec
       try,
       unexpected,
       ParsecT, skipMany )
-import DSL ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
-import Core ( Pattern, Tree, RValue, Rewrite (Rewrite), unpattern ) 
+import Runtime ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
+import Core ( Tree, RValue, Rewrite (Rewrite) ) 
 import Data.Char ( isSpace, isDigit )
 import Control.Applicative (Alternative(some))
-import Control.Monad (liftM)
+import Control.Monad (liftM, join)
 import Control.Monad.Trans.Class (lift)
 
 
@@ -31,25 +31,25 @@ olFlex :: RuleParser a -> RuleParser a
 olFlex p = p <* skipMany (satisfy (\c -> isSpace c && (c `notElem` ("\n\r" :: String))))
 
 psymCharParser :: RuleParser Char
-psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]~" :: String)))
+psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]" :: String)))
 
 psymRawParser :: RuleParser String
 psymRawParser = some psymCharParser 
 
-psymParser :: RuleParser (Tree (Pattern RValue))
+psymParser :: RuleParser (Tree RValue)
 psymParser = psym <$> psymRawParser
 
-pvarParser :: RuleParser (Tree (Pattern RValue))
+pvarParser :: RuleParser (Tree RValue)
 pvarParser = char ':' *> (pvar <$> psymRawParser)
 
-pstrParser :: RuleParser (Tree (Pattern RValue))
+pstrParser :: RuleParser (Tree RValue)
 pstrParser = char '/' *> (pstr <$> psymRawParser)
 
-pnumParser :: RuleParser (Tree (Pattern RValue))
+pnumParser :: RuleParser (Tree RValue)
 pnumParser = try $ char '.' *> (pnum . read <$> many1 (satisfy isDigit))
 
 -- parses (1 2 (4 (5 6 7 (8))) :a 5 6)
-pbranchParser :: RuleParser (Tree (Pattern RValue))
+pbranchParser :: RuleParser (Tree RValue)
 pbranchParser = do
     _ <- flex . string $ "("
     lits <- many . flex $ patternLiteralParser
@@ -57,7 +57,7 @@ pbranchParser = do
     return $ pbranch lits
 
 -- parses [1 2 3 4 ..:a]
-ptailListParser :: RuleParser (Tree (Pattern RValue))
+ptailListParser :: RuleParser (Tree RValue)
 ptailListParser = do
     _ <- flex . string $ "["
     lits <- many . flex $ patternLiteralParser
@@ -68,7 +68,7 @@ ptailListParser = do
             cons x xs = pbranch [x, xs]
 
 -- parses [1 2 (3) :a 4]
-plistParser :: RuleParser (Tree (Pattern RValue))
+plistParser :: RuleParser (Tree RValue)
 plistParser = do
     _ <- flex . string $ "["
     lits <- many . flex $ patternLiteralParser
@@ -77,10 +77,10 @@ plistParser = do
         where
             cons x xs = pbranch [x, xs]
 
-patternLiteralParser :: RuleParser (Tree (Pattern RValue))
+patternLiteralParser :: RuleParser (Tree RValue)
 patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
-patternParser :: RuleParser (Tree (Pattern RValue))
+patternParser :: RuleParser (Tree RValue)
 patternParser = try ptailListParser <|> try patternLiteralParser
 
 patternRuleParser :: RuleParser (Rewrite RValue)
@@ -92,11 +92,13 @@ patternRuleParser = flex $ do
     lift $ addRule rule
     pure rule
 
+-- programParser :: RuleParser [Tree RValue]
+-- programParser = many . flex $ do 
+--     _ <- many $ try patternRuleParser
+--     pat <- flex patternParser
+--     _ <- many $ try patternRuleParser
+--     case unpattern pat of 
+--         (Just rval) -> pure rval
+--         Nothing -> unexpected "variable in runtime value"
 programParser :: RuleParser [Tree RValue]
-programParser = many . flex $ do 
-    _ <- many $ try patternRuleParser
-    pat <- flex patternParser
-    _ <- many $ try patternRuleParser
-    case unpattern pat of 
-        (Just rval) -> pure rval
-        Nothing -> unexpected "variable in runtime value"
+programParser = (fmap join . many . flex) (some . flex $ patternParser)

@@ -11,13 +11,14 @@ import Control.Monad.Trans.State.Lazy ( State, modify, runState )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 
--- Rewritable / runtime values
-data RValue = RSymbol T.Text | RString T.Text | RNumber Integer deriving (Lift)
+-- Runtime values, including pattern variables
+data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RNumber t) = show t
+    show (PVariable t) = ':':T.unpack t
 
 data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable)
 
@@ -35,22 +36,22 @@ sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
 instance (Show a) => Show (Tree a) where
     show = prettyprint
 
--- Matchable patterns with holes for variables
-data Pattern a = PExact a | PVariable T.Text deriving (Lift)
+-- -- Matchable patterns with holes for variables
+-- data Pattern a = PExact a | PVariable T.Text deriving (Lift)
 
-instance Show a => Show (Pattern a) where
-    show (PExact a) = show a
-    show (PVariable t) = ':':T.unpack t
+-- instance Show a => Show (Pattern a) where
+--     show (PExact a) = show a
+--     show (PVariable t) = ':':T.unpack t
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
-data Rewrite a = Rewrite (Tree (Pattern a)) [Tree (Pattern a)] deriving (Lift)
+data Rewrite a = Rewrite (Tree a) [Tree a] deriving (Lift)
 
-unpattern :: Tree (Pattern a) -> Maybe (Tree a)
-unpattern = traverse f
-    where
-        f (PVariable _) = Nothing
-        f (PExact a) = Just a
+-- unpattern :: Tree (Pattern a) -> Maybe (Tree a)
+-- unpattern = traverse f
+--     where
+--         f (PVariable _) = Nothing
+--         f (PExact a) = Just a
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
@@ -58,7 +59,7 @@ instance Show a => Show (Rewrite a) where
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
 --          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
-tryApply :: Tree RValue -> Tree (Pattern RValue) -> State (M.Map T.Text [Tree RValue]) Bool
+tryApply :: Tree RValue -> Tree RValue -> State (M.Map T.Text [Tree RValue]) Bool
 -- Bind pattern variables and special accumulators
 tryApply rval (Leaf (PVariable pvar)) 
     -- Bind special accumulator
@@ -89,15 +90,15 @@ tryApply (Branch rtrees) (Branch pvals)
     | length rtrees /= length pvals = pure False
     | otherwise = and <$> zipWithM tryApply rtrees pvals
 -- Match symbol patterns
-tryApply (Leaf (RSymbol rsym)) (Leaf (PExact (RSymbol psym)))
+tryApply (Leaf (RSymbol rsym)) (Leaf (RSymbol psym))
     | rsym == psym = pure True
     | otherwise = pure False
 -- Match number patterns
-tryApply (Leaf (RNumber rnum)) (Leaf (PExact (RNumber pnum)))
+tryApply (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
     | rnum == pnum = pure True
     | otherwise = pure False
 -- Match string patterns (TODO: use regex)
-tryApply (Leaf (RString rstr)) (Leaf (PExact (RString pstr)))
+tryApply (Leaf (RString rstr)) (Leaf (RString pstr))
     | rstr == pstr = pure True
     | otherwise = pure False
 -- Catch failed matches
@@ -126,9 +127,9 @@ apply rval rr@(Rewrite pval templates) = let
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
-betaReduce :: M.Map T.Text [Tree RValue] -> Tree (Pattern RValue) -> [Tree RValue]
+--            Variable name <-> value        
+betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> [Tree RValue]
 betaReduce bindings (Branch trees) = [Branch . concatMap (betaReduce bindings) $ trees]
-betaReduce _ (Leaf (PExact pval)) = [Leaf pval]
 betaReduce bindings (Leaf (PVariable pvar)) 
     -- Handle special accumulators
     | T.head pvar == '?' = 
@@ -150,6 +151,7 @@ betaReduce bindings (Leaf (PVariable pvar))
     | otherwise = case bindings M.!? pvar of
         Just rvals -> reverse rvals
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
+betaReduce _ (Leaf pval) = [Leaf pval]
 
 -- Nothing if no rewrites applied
 -- Just the new runtime values if a rewrite applied
@@ -161,7 +163,7 @@ applyRewrites rval = listToMaybe . mapMaybe maybeApply
             (_, 0) -> Nothing
             (rvals', _) -> Just rvals'
 
-fix :: Tree RValue -> [Rewrite RValue] -> [Tree RValue]
+-- fix :: Tree RValue -> [Rewrite RValue] -> [Tree RValue]
 fix tree rewrites = case applyRewrites tree rewrites of 
     Just tree' -> concatMap (`fix` rewrites) tree'
     Nothing -> [tree]
