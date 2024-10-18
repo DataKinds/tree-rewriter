@@ -3,6 +3,9 @@ module Runtime where
 import Core
 import Control.Monad.Trans.Accum
 import qualified Data.Text as T
+import Data.Foldable (foldrM)
+import Debug.Trace
+import Data.Either (rights)
 
 -- Rule list used for execution
 newtype Rules = Rules [Rewrite RValue]
@@ -71,29 +74,41 @@ pvar = Leaf . PVariable . T.pack
 makeRules :: WithRuleset a -> Rules 
 makeRules = flip execAccum mempty
 
-run :: Rules -> Tree RValue -> [Tree RValue]
-run (Rules rewrites) inputTree = fix inputTree rewrites
-
 -- DFS a tree looking for definitions
--- TODO
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch [pattern, Leaf (RSymbol "~>"), template]) = addRule (Rewrite pattern template) >> (pure $ pbranch [])
-eatDefs (Branch b:bs) = eatDefs b
-        
+eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (pbranch [])
+eatDefs (Branch bs) = Branch <$> mapM eatDefs bs
+eatDefs l = pure l
 
+discardEither :: Either a a -> a
+discardEither (Right a) = a
+discardEither (Left a) = a
 
 -- Rewrite terms once, creating or modifying definitions as they arise
-runStep :: [Tree RValue] -> WithRuleset [Tree RValue]
-runStep [] = pure []
-runStep (tree:trees) = do 
-    (Rules rewrites) <- look
+-- Left if no rewrite rules applied, right if some did
+runStep :: [Tree RValue] -> WithRuleset (Either [Tree RValue] [Tree RValue])
+runStep [] = pure . pure $ []
+runStep trees = do 
     -- detect definitions
-    tree' <- eatDefs tree
-    rest <- runStep trees
-    return $ case applyRewrites tree' rewrites of 
-        Just tree'' -> tree''++rest
-        Nothing -> tree:rest
-    -- mapM (`fix` rewrites)
+    noDefsTrees <- mapM eatDefs trees
+    (Rules rewrites) <- look
+    -- apply rewrites
+    let lrTrees = flip applyRewrites rewrites <$> noDefsTrees 
+    case (trace ("lrtree:"++show lrTrees) $ rights lrTrees) of
+        -- no rewrites happened
+        []  -> pure . Left $ noDefsTrees
+        -- rewrites happened! be careful to not force their values here
+        _ -> pure . Right $ concatMap discardEither lrTrees
 
--- runRuleset :: Ruleset -> Tree RValue -> [Tree RValue]
--- runRuleset ruleset = run (makeRules ruleset)
+-- Runs a rewrite ruleset until it does not match
+run :: Rules -> [Tree RValue] -> ([Tree RValue], Rules)
+run rules inputTrees = runAccum (add rules >> go inputTrees) (Rules [])
+    where
+        go trees = do
+            lrTree <- runStep trees
+            -- defs <- look
+            case lrTree of
+                Left trees' -> pure trees'
+                Right trees' ->  go trees'
+
+

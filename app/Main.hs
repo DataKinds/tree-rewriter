@@ -38,7 +38,7 @@ test = do
     putStrLn "Applying to input:"
     print input
     putStrLn "\nOutcome:"
-    print $ run rules1 input
+    print $ run rules1 [input]
 
 runProg :: T.Text -> String -> IO () 
 runProg prog filepath = let
@@ -47,10 +47,12 @@ runProg prog filepath = let
     in case parsed of 
         Left err -> fail . show $ err
         Right rvals -> do
+            putStrLn "Parsed from string:"
             print parsed
-            print rules
-            let rvals' = run rules <$> rvals
-            (mapM_ . mapM_) (putStrLn . sexprprint) rvals'
+            let (rvals', defs) = run rules rvals
+            print defs
+            putStrLn "Transform:"
+            mapM_ (putStrLn . sexprprint) rvals'
 
 main :: IO ()
 main = do

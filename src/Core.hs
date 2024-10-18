@@ -153,17 +153,23 @@ betaReduce bindings (Leaf (PVariable pvar))
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
 betaReduce _ (Leaf pval) = [Leaf pval]
 
--- Nothing if no rewrites applied
--- Just the new runtime values if a rewrite applied
-applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe [Tree RValue]
-applyRewrites rval = listToMaybe . mapMaybe maybeApply
+-- Left if no rewrites applied
+-- Right the new runtime values if a rewrite applied
+applyRewrites :: Tree RValue -> [Rewrite RValue] -> Either [Tree RValue] [Tree RValue]
+applyRewrites rval rws = packResult $ _applyRewrites rval rws
+    where
+        packResult (Just rw) = Right rw
+        packResult Nothing = Left [rval]
+
+_applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe [Tree RValue]
+_applyRewrites rval = listToMaybe . mapMaybe maybeApply
     where
         maybeApply :: Rewrite RValue -> Maybe [Tree RValue]
         maybeApply rewrite = case apply rval rewrite of
             (_, 0) -> Nothing
-            (rvals', _) -> Just rvals'
+            (rvals', _) -> Just rvals' 
 
 -- fix :: Tree RValue -> [Rewrite RValue] -> [Tree RValue]
-fix tree rewrites = case applyRewrites tree rewrites of 
+fix tree rewrites = case _applyRewrites tree rewrites of 
     Just tree' -> concatMap (`fix` rewrites) tree'
     Nothing -> [tree]
