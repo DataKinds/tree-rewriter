@@ -20,6 +20,7 @@ instance Show Rules where
         show <$> rewrites]
 
 instance Semigroup Rules where
+    -- TODO: make this more efficient
     Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
 
 instance Monoid Rules where
@@ -52,6 +53,7 @@ rule pattern templates = addRule $ Rewrite pattern templates
 (~>) = rule
 
 -- Pattern leafs
+-- TODO: remove, replace with r* above ^
 pleaf :: a -> Tree a
 pleaf = Leaf
 psym :: String -> Tree RValue
@@ -76,7 +78,9 @@ makeRules = flip execAccum mempty
 
 -- DFS a tree looking for definitions
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (pbranch [])
+eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [rstr ruleStr])
+    where
+        ruleStr = sexprprint pattern ++ " ~> " ++ (unwords $ map sexprprint templates)
 eatDefs (Branch bs) = Branch <$> mapM eatDefs bs
 eatDefs l = pure l
 
@@ -94,7 +98,7 @@ runStep trees = do
     (Rules rewrites) <- look
     -- apply rewrites
     let lrTrees = flip applyRewrites rewrites <$> noDefsTrees 
-    case (trace ("lrtree:"++show lrTrees) $ rights lrTrees) of
+    case rights lrTrees of
         -- no rewrites happened
         []  -> pure . Left $ noDefsTrees
         -- rewrites happened! be careful to not force their values here
@@ -102,13 +106,12 @@ runStep trees = do
 
 -- Runs a rewrite ruleset until it does not match
 run :: Rules -> [Tree RValue] -> ([Tree RValue], Rules)
-run rules inputTrees = runAccum (add rules >> go inputTrees) (Rules [])
+run rules inputTrees = runAccum (add rules >> go inputTrees) mempty
     where
         go trees = do
             lrTree <- runStep trees
-            -- defs <- look
             case lrTree of
                 Left trees' -> pure trees'
-                Right trees' ->  go trees'
+                Right trees' -> go trees'
 
 

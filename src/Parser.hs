@@ -58,7 +58,7 @@ pbranchParser = do
 
 -- parses [1 2 3 4 ..:a]
 ptailListParser :: RuleParser (Tree RValue)
-ptailListParser = do
+ptailListParser = try $ do
     _ <- flex . string $ "["
     lits <- many . flex $ patternLiteralParser
     tail' <- string ".." *> pvarParser
@@ -78,10 +78,9 @@ plistParser = do
             cons x xs = pbranch [x, xs]
 
 patternLiteralParser :: RuleParser (Tree RValue)
-patternLiteralParser = choice [pbranchParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
+patternLiteralParser = choice [pbranchParser, ptailListParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
-patternParser :: RuleParser (Tree RValue)
-patternParser = try ptailListParser <|> try patternLiteralParser
+patternParser = try patternLiteralParser
 
 patternRuleParser :: RuleParser (Rewrite RValue)
 patternRuleParser = flex $ do
@@ -92,13 +91,5 @@ patternRuleParser = flex $ do
     lift $ addRule rule
     pure rule
 
--- programParser :: RuleParser [Tree RValue]
--- programParser = many . flex $ do 
---     _ <- many $ try patternRuleParser
---     pat <- flex patternParser
---     _ <- many $ try patternRuleParser
---     case unpattern pat of 
---         (Just rval) -> pure rval
---         Nothing -> unexpected "variable in runtime value"
 programParser :: RuleParser [Tree RValue]
 programParser = (fmap join . many . flex) (some . flex $ patternParser)

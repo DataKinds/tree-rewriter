@@ -36,22 +36,10 @@ sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
 instance (Show a) => Show (Tree a) where
     show = prettyprint
 
--- -- Matchable patterns with holes for variables
--- data Pattern a = PExact a | PVariable T.Text deriving (Lift)
-
--- instance Show a => Show (Pattern a) where
---     show (PExact a) = show a
---     show (PVariable t) = ':':T.unpack t
-
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
 data Rewrite a = Rewrite (Tree a) [Tree a] deriving (Lift)
 
--- unpattern :: Tree (Pattern a) -> Maybe (Tree a)
--- unpattern = traverse f
---     where
---         f (PVariable _) = Nothing
---         f (PExact a) = Just a
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
@@ -156,10 +144,7 @@ betaReduce _ (Leaf pval) = [Leaf pval]
 -- Left if no rewrites applied
 -- Right the new runtime values if a rewrite applied
 applyRewrites :: Tree RValue -> [Rewrite RValue] -> Either [Tree RValue] [Tree RValue]
-applyRewrites rval rws = packResult $ _applyRewrites rval rws
-    where
-        packResult (Just rw) = Right rw
-        packResult Nothing = Left [rval]
+applyRewrites rval rws = maybe (Left [rval]) Right $ _applyRewrites rval rws
 
 _applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe [Tree RValue]
 _applyRewrites rval = listToMaybe . mapMaybe maybeApply
