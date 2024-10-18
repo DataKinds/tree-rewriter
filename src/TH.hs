@@ -8,7 +8,8 @@ import Text.Parsec
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import Control.Monad.Trans.Accum
-import Parser (RuleParser, flex, patternRuleParser, patternLiteralParser)
+import Parser (RuleParser, flex, patternLiteralParser)
+import Data.Functor.Identity ( Identity(runIdentity) )
 
 -- Quasiquote helpers --
 treeToQ :: Lift a => RuleParser a -> RuleParser (Q Exp)
@@ -16,22 +17,15 @@ treeToQ par = do
     out <- par
     return [| out |]
 
-quoteRuleParser :: RuleParser (Q Exp)
-quoteRuleParser = flex $ do
-    rewrite <- treeToQ patternRuleParser 
-    pure [| addRule $(rewrite) |]
-
 quotePattern :: String -> Q Exp
 quotePattern pat = let
-    parseM = runParserT parser () "" pat
-    (parsed, _) = runAccum parseM mempty
+    parsed = runIdentity $ runParserT parser () "" pat
     in case parsed of 
         Left err -> error . show $ err
         Right q -> q
     where
-        parser1 = try quoteRuleParser 
         parser2 = treeToQ $ try patternLiteralParser 
-        parser = spaces *> (parser1 <|> parser2)
+        parser = spaces *> parser2
 
 -- pAttern (p was taken...)
 a :: QuasiQuoter

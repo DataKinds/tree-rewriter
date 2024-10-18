@@ -11,19 +11,21 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as I
 import Text.Parsec (runParserT)
 import Control.Monad.Trans.Accum (runAccum)
+import Data.Functor.Identity ( Identity(runIdentity) )
 
 
-rules1 :: Rules
-rules1 = makeRules $ do
-    [a|hello ~> world|]
-    [a|(.1 :asd) ~> (.3 :asd)|]
-    [a|(.1 :a .3) ~> (.3 :a .1)|]
-    [a|[.1 .2 three four :a :b] ~> [:a :b]|]
-    [a|[.1 .2 three four :a ..:b] ~> [:a ..:b]|]
-    [a|(if true then :a else :b) ~> :a|]
-    [a|(if false then :a else :b) ~> :b|]
-    [a|(true) ~> true|]
-    [a|(false) ~> false|]
+rules1 :: [Tree RValue]
+rules1 = [
+        [a|hello ~> world|],
+        [a|(.1 :asd) ~> (.3 :asd)|],
+        [a|(.1 :a .3) ~> (.3 :a .1)|],
+        [a|[.1 .2 three four :a :b] ~> [:a :b]|],
+        [a|[.1 .2 three four :a ..:b] ~> [:a ..:b]|],
+        [a|(if true then :a else :b) ~> :a|],
+        [a|(if false then :a else :b) ~> :b|],
+        [a|(true) ~> true|],
+        [a|(false) ~> false|]
+    ]
 
 input :: Tree RValue
 input = rbranch [rsym "hello", rsym "world!", rbranch [rsym "true"], rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
@@ -33,23 +35,17 @@ input2 =  [a|(hello world)|]
 input3 = [a|(hello :world)|]
 
 test :: IO ()
-test = do
-    print rules1
-    putStrLn "Applying to input:"
-    print input
-    putStrLn "\nOutcome:"
-    print $ run rules1 [input]
+test = print $ run mempty (rules1 ++ [input])
 
 runProg :: T.Text -> String -> IO () 
 runProg prog filepath = let
-    parseM = runParserT programParser () filepath (T.unpack prog)
-    (parsed, rules) = runAccum parseM mempty
+    parsed = runIdentity $ runParserT programParser () filepath (T.unpack prog)
     in case parsed of 
         Left err -> fail . show $ err
         Right rvals -> do
             putStrLn "Parsed from string:"
             print parsed
-            let (rvals', defs) = run rules rvals
+            let (rvals', defs) = run mempty rvals
             print defs
             putStrLn "Transform:"
             mapM_ (putStrLn . sexprprint) rvals'

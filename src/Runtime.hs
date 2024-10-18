@@ -38,6 +38,8 @@ rnum = Leaf . RNumber
 rbranch :: [Tree a] -> Tree a
 rbranch = Branch
 
+psym = rsym; pstr = rstr; pnum = rnum; pbranch = rbranch; 
+
 -- Ruleset: Pattern and template building eDSL --
 type WithRuleset = Accum Rules 
 type Ruleset = WithRuleset ()
@@ -51,21 +53,6 @@ rule pattern templates = addRule $ Rewrite pattern templates
 
 (~>) :: Tree RValue -> [Tree RValue] -> Ruleset
 (~>) = rule
-
--- Pattern leafs
--- TODO: remove, replace with r* above ^
-pleaf :: a -> Tree a
-pleaf = Leaf
-psym :: String -> Tree RValue
-psym = pleaf . RSymbol . T.pack
-pstr :: String -> Tree RValue
-pstr = pleaf . RString . T.pack
-pnum :: Integer -> Tree RValue
-pnum = pleaf . RNumber
-
--- Pattern branch
-pbranch :: [Tree a] -> Tree a
-pbranch = Branch
 
 -- Pattern variables 
 pvar :: String -> Tree RValue
@@ -104,7 +91,7 @@ runStep trees = do
         -- rewrites happened! be careful to not force their values here
         _ -> pure . Right $ concatMap discardEither lrTrees
 
--- Runs a rewrite ruleset until it does not match
+-- Runs a rewrite ruleset, from a starting ruleset, until it does not match
 run :: Rules -> [Tree RValue] -> ([Tree RValue], Rules)
 run rules inputTrees = runAccum (add rules >> go inputTrees) mempty
     where

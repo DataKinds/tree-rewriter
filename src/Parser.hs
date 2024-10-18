@@ -18,10 +18,11 @@ import Data.Char ( isSpace, isDigit )
 import Control.Applicative (Alternative(some))
 import Control.Monad (liftM, join)
 import Control.Monad.Trans.Class (lift)
+import Data.Functor.Identity (Identity)
 
 
 
-type RuleParser = ParsecT String () WithRuleset
+type RuleParser = ParsecT String () Identity
 
 flex :: RuleParser a -> RuleParser a
 flex p = p <* spaces
@@ -82,14 +83,14 @@ patternLiteralParser = choice [pbranchParser, ptailListParser, plistParser, pvar
 
 patternParser = try patternLiteralParser
 
-patternRuleParser :: RuleParser (Rewrite RValue)
-patternRuleParser = flex $ do
-    pattern <- olFlex patternParser
-    _ <- olFlex $ string "~>"
-    templates <- many $ olFlex patternParser
-    let rule = Rewrite pattern templates
-    lift $ addRule rule
-    pure rule
+-- patternRuleParser :: RuleParser (Rewrite RValue)
+-- patternRuleParser = flex $ do
+--     pattern <- olFlex patternParser
+--     _ <- olFlex $ string "~>"
+--     templates <- many $ olFlex patternParser
+--     let rule = Rewrite pattern templates
+--     lift $ addRule rule
+--     pure rule
 
 programParser :: RuleParser [Tree RValue]
 programParser = (fmap join . many . flex) (some . flex $ patternParser)
