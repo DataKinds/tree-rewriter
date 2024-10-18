@@ -6,6 +6,7 @@ import qualified Data.Text as T
 import Data.Foldable (foldrM)
 import Debug.Trace
 import Data.Either (rights)
+import Control.Monad.Trans.Class (lift)
 
 -- Rule list used for execution
 newtype Rules = Rules [Rewrite RValue]
@@ -41,7 +42,8 @@ rbranch = Branch
 psym = rsym; pstr = rstr; pnum = rnum; pbranch = rbranch; 
 
 -- Ruleset: Pattern and template building eDSL --
-type WithRuleset = Accum Rules 
+type WithRuleset = Accum Rules
+type WithIORuleset = AccumT Rules IO
 type Ruleset = WithRuleset ()
 
 -- Rewriting rule
@@ -77,7 +79,7 @@ discardEither (Left a) = a
 
 -- Rewrite terms once, creating or modifying definitions as they arise
 -- Left if no rewrite rules applied, right if some did
-runStep :: [Tree RValue] -> WithRuleset (Either [Tree RValue] [Tree RValue])
+runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
 runStep [] = pure . pure $ []
 runStep trees = do 
     -- detect definitions

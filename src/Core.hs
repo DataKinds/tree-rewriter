@@ -10,6 +10,8 @@ import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy ( State, modify, runState )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
+import Data.Foldable (foldrM)
+import Data.Functor ((<&>))
 
 -- Runtime values, including pattern variables
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift)
@@ -24,7 +26,7 @@ data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traver
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
-    where  
+    where
         pp 0 (Leaf a) = show a
         pp d (Leaf a) = replicate d ' ' ++ "- " ++ show a
         pp d (Branch as) = intercalate "\n" $ map (pp $ d+1) as
@@ -49,7 +51,7 @@ instance Show a => Show (Rewrite a) where
 --          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
 tryApply :: Tree RValue -> Tree RValue -> State (M.Map T.Text [Tree RValue]) Bool
 -- Bind pattern variables and special accumulators
-tryApply rval (Leaf (PVariable pvar)) 
+tryApply rval (Leaf (PVariable pvar))
     -- Bind special accumulator
     | T.head pvar == '?' = case pvar of
         -- sum accumulator 
@@ -64,6 +66,8 @@ tryApply rval (Leaf (PVariable pvar))
         "?-" -> case rval of
             num@(Leaf (RNumber _)) -> addBinding pvar num
             _ -> pure False
+        -- output accumulator
+        "?>" -> addBinding pvar rval
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
     -- Bind regular pattern variable
     | otherwise = addBinding pvar rval
@@ -91,70 +95,77 @@ tryApply (Leaf (RString rstr)) (Leaf (RString pstr))
     | otherwise = pure False
 -- Catch failed matches
 tryApply _ _ = pure False
-    
+
 
 -- DFS the input tree to try applying a rewrite rule anywhere it's possible --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rewrite RValue -> ([Tree RValue], Integer)
+apply :: Tree RValue -> Rewrite RValue -> IO ([Tree RValue], Integer)
 apply rval rr@(Rewrite pval templates) = let
     (success, bindings) = runState (tryApply rval pval) mempty
     in templateOrRecurse success bindings
     where
-        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> ([Tree RValue], Integer)
+        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> IO ([Tree RValue], Integer)
         -- We got a successful branch pattern match, let's rewrite to the template.
-        templateOrRecurse True bindings = (concatMap (betaReduce bindings) templates, 1)
+        templateOrRecurse True bindings = do
+            treeLists <- mapM (betaReduce bindings) templates
+            pure (concat treeLists, 1)
         templateOrRecurse False _ = case rval of
             -- If we failed to match a nub branch, we give it back unchanged
-            Branch [] -> ([rval], 0)
+            Branch [] -> pure ([rval], 0)
             -- If we failed to match an inhabited branch, let's match the branch's children
-            Branch rtrees -> let
-                (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) (flip apply rr <$> rtrees)
-                in ([Branch . concat $ rtrees'], count)
+            Branch rtrees -> do
+                treeList <- mapM (`apply` rr) rtrees
+                let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
+                pure ([Branch . concat $ rtrees'], count)
             -- If we failed to match a single runtime value, we give it back unchanged
-            Leaf _ -> ([rval], 0)
+            Leaf _ -> pure ([rval], 0)
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
 --            Variable name <-> value        
-betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> [Tree RValue]
-betaReduce bindings (Branch trees) = [Branch . concatMap (betaReduce bindings) $ trees]
-betaReduce bindings (Leaf (PVariable pvar)) 
+betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> IO [Tree RValue]
+betaReduce bindings (Branch trees) = do
+    treeLists <- mapM (betaReduce bindings) trees
+    pure [Branch $ concat treeLists]
+betaReduce bindings (Leaf (PVariable pvar))
     -- Handle special accumulators
-    | T.head pvar == '?' = 
+    | T.head pvar == '?' =
         case pvar of
             -- sum accumulator 
-            "?+" -> case bindings M.!? pvar of
+            "?+" -> pure $ case bindings M.!? pvar of
                 Just rvals -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
                 Nothing -> []
             -- product accumulator 
-            "?*" -> case bindings M.!? pvar of
+            "?*" -> pure $ case bindings M.!? pvar of
                 Just rvals -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
                 Nothing -> []
             -- negation accumulator 
-            "?-" -> case bindings M.!? pvar of
+            "?-" -> pure $ case bindings M.!? pvar of
                 Just rvals -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
                 Nothing -> []
+            -- output accumulator
+            "?>" -> case bindings M.!? pvar of
+                Just rvals -> print rvals >> pure rvals
+                Nothing -> pure []
+
             _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
     -- Substitute pattern variable normally
-    | otherwise = case bindings M.!? pvar of
+    | otherwise = pure $ case bindings M.!? pvar of
         Just rvals -> reverse rvals
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
-betaReduce _ (Leaf pval) = [Leaf pval]
+betaReduce _ (Leaf pval) = pure [Leaf pval]
 
 -- Left if no rewrites applied
 -- Right the new runtime values if a rewrite applied
-applyRewrites :: Tree RValue -> [Rewrite RValue] -> Either [Tree RValue] [Tree RValue]
-applyRewrites rval rws = maybe (Left [rval]) Right $ _applyRewrites rval rws
+applyRewrites :: Tree RValue -> [Rewrite RValue] -> IO (Either [Tree RValue] [Tree RValue])
+applyRewrites rval rws = maybe (Left [rval]) Right <$> _applyRewrites rval rws
 
-_applyRewrites :: Tree RValue -> [Rewrite RValue] -> Maybe [Tree RValue]
-_applyRewrites rval = listToMaybe . mapMaybe maybeApply
+_applyRewrites :: Tree RValue -> [Rewrite RValue] -> IO (Maybe [Tree RValue])
+_applyRewrites rval rws = do
+    out <- mapM maybeApply rws
+    pure . listToMaybe . catMaybes $ out
     where
-        maybeApply :: Rewrite RValue -> Maybe [Tree RValue]
-        maybeApply rewrite = case apply rval rewrite of
+        maybeApply :: Rewrite RValue -> IO (Maybe [Tree RValue])
+        maybeApply rewrite = apply rval rewrite <&> (\case
             (_, 0) -> Nothing
-            (rvals', _) -> Just rvals' 
-
--- fix :: Tree RValue -> [Rewrite RValue] -> [Tree RValue]
-fix tree rewrites = case _applyRewrites tree rewrites of 
-    Just tree' -> concatMap (`fix` rewrites) tree'
-    Nothing -> [tree]
+            (rvals', _) -> Just rvals')
