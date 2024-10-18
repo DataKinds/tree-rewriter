@@ -32,10 +32,10 @@ olFlex :: RuleParser a -> RuleParser a
 olFlex p = p <* skipMany (satisfy (\c -> isSpace c && (c `notElem` ("\n\r" :: String))))
 
 psymCharParser :: RuleParser Char
-psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/.()[]" :: String)))
+psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/()[]" :: String)))
 
 psymRawParser :: RuleParser String
-psymRawParser = some psymCharParser 
+psymRawParser = some psymCharParser
 
 psymParser :: RuleParser (Tree RValue)
 psymParser = psym <$> psymRawParser
@@ -43,11 +43,12 @@ psymParser = psym <$> psymRawParser
 pvarParser :: RuleParser (Tree RValue)
 pvarParser = char ':' *> (pvar <$> psymRawParser)
 
+-- TODO
 pstrParser :: RuleParser (Tree RValue)
 pstrParser = char '/' *> (pstr <$> psymRawParser)
 
 pnumParser :: RuleParser (Tree RValue)
-pnumParser = try $ char '.' *> (pnum . read <$> many1 (satisfy isDigit))
+pnumParser = try (char '+' *> (pnum . read <$> many1 (satisfy isDigit)))
 
 -- parses (1 2 (4 (5 6 7 (8))) :a 5 6)
 pbranchParser :: RuleParser (Tree RValue)
