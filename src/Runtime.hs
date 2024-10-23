@@ -7,6 +7,7 @@ import Data.Foldable (foldrM)
 import Debug.Trace
 import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
+import Data.Functor.Identity (Identity(Identity))
 
 -- Rule list used for execution
 newtype Rules = Rules [Rewrite RValue]
@@ -65,17 +66,17 @@ pvar = Leaf . PVariable . T.pack
 makeRules :: WithRuleset a -> Rules 
 makeRules = flip execAccum mempty
 
--- DFS a tree looking for definitions
+-- DFS a tree looking for definitions. Consume them and delete the tree branch containing the def.
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
 eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [rstr ruleStr])
     where
-        ruleStr = sexprprint pattern ++ " ~> " ++ (unwords $ map sexprprint templates)
+        ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
 eatDefs (Branch bs) = Branch <$> mapM eatDefs bs
 eatDefs l = pure l
 
-discardEither :: Either a a -> a
-discardEither (Right a) = a
-discardEither (Left a) = a
+
+liftIORuleset :: WithRuleset a -> WithIORuleset a
+liftIORuleset = mapAccumT (\(Identity a) -> pure a)
 
 -- Rewrite terms once, creating or modifying definitions as they arise
 -- Left if no rewrite rules applied, right if some did
@@ -83,19 +84,20 @@ runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
 runStep [] = pure . pure $ []
 runStep trees = do 
     -- detect definitions
-    noDefsTrees <- mapM eatDefs trees
+    noDefsTrees <- liftIORuleset $ mapM eatDefs trees
     (Rules rewrites) <- look
     -- apply rewrites
-    let lrTrees = flip applyRewrites rewrites <$> noDefsTrees 
+    let _lrTrees = flip applyRewrites rewrites <$> noDefsTrees 
+    lrTrees <- lift $ sequence _lrTrees
     case rights lrTrees of
         -- no rewrites happened
         []  -> pure . Left $ noDefsTrees
         -- rewrites happened! be careful to not force their values here
-        _ -> pure . Right $ concatMap discardEither lrTrees
+        _ -> pure . Right $ concatMap (either id id) lrTrees
 
 -- Runs a rewrite ruleset, from a starting ruleset, until it does not match
-run :: Rules -> [Tree RValue] -> ([Tree RValue], Rules)
-run rules inputTrees = runAccum (add rules >> go inputTrees) mempty
+run :: Rules -> [Tree RValue] -> IO ([Tree RValue], Rules)
+run rules inputTrees = runAccumT (add rules >> go inputTrees) mempty
     where
         go trees = do
             lrTree <- runStep trees

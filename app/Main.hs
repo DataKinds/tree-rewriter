@@ -35,7 +35,7 @@ input2 =  [a|(hello world)|]
 input3 = [a|(hello :world)|]
 
 test :: IO ()
-test = print $ run mempty (rules1 ++ [input])
+test = run mempty (rules1 ++ [input]) >>= print
 
 runProg :: T.Text -> String -> IO () 
 runProg prog filepath = let
@@ -45,7 +45,7 @@ runProg prog filepath = let
         Right rvals -> do
             -- putStrLn "Parsed from string:"
             -- print parsed
-            let (rvals', defs) = run mempty rvals
+            (rvals', defs) <- run mempty rvals
             -- print defs
             -- putStrLn "Transform:"
             mapM_ (putStrLn . sexprprint) rvals'
