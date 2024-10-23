@@ -1,0 +1,8 @@
+((pp :?>) ~> :?>)
+((- :?-) ~> :?-)
+((- :n :?-) ~> (pp (+ :n :?-)))
+((+ :?+ :?+) ~> :?+)
+((appendn :xs :x +0) ~> :xs)
+((appendn :xs :x :!n) ~> (pp (appendn (:xs :x) :x (- :!n +1))))
+(appendn (hello) ok +10)
+[hello ok ok oko kok ok ok ok]

@@ -1,6 +1,3 @@
-((- :?- :?-) ~> :?-)
-((appendn :xs :x :n) ~TODO> (appendn (:xs :x) :x (- :n 1)))
-((appendn :xs :x +0) ~TODO> :xs)
 ((repdef :name :r :def) ~> ((:name :r) ~> :def)
                            ((:name :r :r) ~> :def)
                            ((:name :r :r :r) ~> :def)
@@ -23,4 +20,3 @@
 (def newfunc woohoo)
 
 
-(appendn (hello) ok +10)

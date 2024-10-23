@@ -48,7 +48,7 @@ pstrParser :: RuleParser (Tree RValue)
 pstrParser = char '/' *> (pstr <$> psymRawParser)
 
 pnumParser :: RuleParser (Tree RValue)
-pnumParser = try (char '+' *> (pnum . read <$> many1 (satisfy isDigit)))
+pnumParser = try (char '+' *> (pnum . read <$> many1 (oneOf "0123456789-")))
 
 -- parses (1 2 (4 (5 6 7 (8))) :a 5 6)
 pbranchParser :: RuleParser (Tree RValue)

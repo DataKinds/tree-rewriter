@@ -20,7 +20,7 @@ data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Te
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
-    show (RNumber t) = show t
+    show (RNumber t) = '+':show t
     show (PVariable t) = ':':T.unpack t
 
 data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable)
@@ -74,6 +74,10 @@ tryApply rval (Leaf (PVariable pvar))
         -- output accumulator
         "?>" -> addBinding pvar rval
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
+    -- Bind eager variable (aka: a var that only binds with a bare term)
+    | T.head pvar == '!' = case rval of
+        (Leaf _) -> addBinding pvar rval
+        (Branch _) -> pure False
     -- Bind regular pattern variable
     | otherwise = addBinding pvar rval
     where
@@ -109,7 +113,7 @@ fst3 (a,_,_)=a
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
 -- apply rval rr@(Rewrite pval templates) = let
 apply rval rr@(Rules rules) = let
-    patterns = rewritePattern <$> rules
+    patterns =rewritePattern <$> rules
     templates = rewriteTemplate <$> rules
     makeMatchAttempts = tryApply rval <$> patterns
     matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
@@ -161,7 +165,7 @@ betaReduce bindings (Leaf (PVariable pvar))
                 Nothing -> []
             -- output accumulator
             "?>" -> case bindings M.!? pvar of
-                Just rvals -> (putStrLn . unwords $ show <$> rvals) >> pure rvals
+                Just rvals -> (putStrLn . unwords $ sexprprint <$> rvals) >> pure rvals
                 Nothing -> pure []
             _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
     -- Substitute pattern variable normally

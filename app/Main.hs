@@ -47,7 +47,10 @@ runProg prog filepath = let
             -- print parsed
             (rvals', defs) <- run mempty rvals
             -- print defs
-            -- putStrLn "Transform:"
+            putStrLn "\n\n"
+            putStrLn "+-----------------+"
+            putStrLn "| Final transform |"
+            putStrLn "+-----------------+"
             mapM_ (putStrLn . sexprprint) rvals'
 
 main :: IO ()
