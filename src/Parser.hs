@@ -11,7 +11,7 @@ import Text.Parsec
       many1,
       try,
       unexpected,
-      ParsecT, skipMany )
+      ParsecT, skipMany, oneOf )
 import Runtime ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
 import Core ( Tree, RValue, Rewrite (Rewrite) ) 
 import Data.Char ( isSpace, isDigit )

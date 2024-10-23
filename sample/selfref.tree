@@ -1,0 +1,20 @@
+((nil :a) ~> )
+((repdef :name :r :def) ~> ((:name :r) ~> :def)
+                           ((:name :r :r) ~> :def)
+                           ((:name :r :r :r) ~> :def)
+                           ((:name :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r :r :r :r :r) ~> :def)
+                           ((:name :r :r :r :r :r :r :r :r :r :r :r :r) ~> :def))
+                          
+(repdef :p :?> (nil :?>))
+((def :name :def) ~> (p defined a thing called :name) (:name ~> :def))
+
+
+(p herllo world!!! how are you)
+(def newfunc woohoo)

@@ -14,7 +14,7 @@ import Data.Foldable (foldrM)
 import Data.Functor ((<&>))
 
 -- Runtime values, including pattern variables
-data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift)
+data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift, Eq, Ord)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
@@ -145,9 +145,8 @@ betaReduce bindings (Leaf (PVariable pvar))
                 Nothing -> []
             -- output accumulator
             "?>" -> case bindings M.!? pvar of
-                Just rvals -> print rvals >> pure rvals
+                Just rvals -> (putStrLn . unwords $ show <$> rvals) >> pure rvals
                 Nothing -> pure []
-
             _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
     -- Substitute pattern variable normally
     | otherwise = pure $ case bindings M.!? pvar of
