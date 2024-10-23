@@ -1,4 +1,6 @@
-((nil :a) ~> )
+((- :?- :?-) ~> :?-)
+((appendn :xs :x :n) ~TODO> (appendn (:xs :x) :x (- :n 1)))
+((appendn :xs :x +0) ~TODO> :xs)
 ((repdef :name :r :def) ~> ((:name :r) ~> :def)
                            ((:name :r :r) ~> :def)
                            ((:name :r :r :r) ~> :def)
@@ -12,9 +14,13 @@
                            ((:name :r :r :r :r :r :r :r :r :r :r :r) ~> :def)
                            ((:name :r :r :r :r :r :r :r :r :r :r :r :r) ~> :def))
                           
-(repdef :p :?> (nil :?>))
-((def :name :def) ~> (p defined a thing called :name) (:name ~> :def))
+((nil :a) ~> )
 
+(repdef p :?> (nil (:?>)))
+((def :name :def) ~> ((p :name) (:name ~> :def)))
 
-(p herllo world!!! how are you)
+(p hello world)
 (def newfunc woohoo)
+
+
+(appendn (hello) ok +10)

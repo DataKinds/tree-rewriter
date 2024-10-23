@@ -12,6 +12,7 @@ import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 import Data.Foldable (foldrM)
 import Data.Functor ((<&>))
+import Debug.Trace (trace)
 
 -- Runtime values, including pattern variables
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift, Eq, Ord)
@@ -41,6 +42,10 @@ instance (Show a) => Show (Tree a) where
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
 data Rewrite a = Rewrite (Tree a) [Tree a] deriving (Lift)
+rewritePattern :: Rewrite a -> Tree a
+rewritePattern (Rewrite pat _) = pat
+rewriteTemplate :: Rewrite a -> [Tree a]
+rewriteTemplate (Rewrite _ templ) = templ
 
 
 instance Show a => Show (Rewrite a) where
@@ -96,20 +101,31 @@ tryApply (Leaf (RString rstr)) (Leaf (RString pstr))
 -- Catch failed matches
 tryApply _ _ = pure False
 
+fst3 :: (a, b, c) -> a
+fst3 (a,_,_)=a
 
--- DFS the input tree to try applying a rewrite rule anywhere it's possible --
+-- DFS the input tree to try applying all rewrite rules anywhere it's possible --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rewrite RValue -> IO ([Tree RValue], Integer)
-apply rval rr@(Rewrite pval templates) = let
-    (success, bindings) = runState (tryApply rval pval) mempty
-    in templateOrRecurse success bindings
+apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
+-- apply rval rr@(Rewrite pval templates) = let
+apply rval rr@(Rules rules) = let
+    patterns = rewritePattern <$> rules
+    templates = rewriteTemplate <$> rules
+    makeMatchAttempts = tryApply rval <$> patterns
+    matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
+    (failedMatches, possibleSuccess) = break fst3 matchAttemptsWithTemplates
+    in case possibleSuccess of 
+        (success, binding, templ):_ -> templateOrRecurse success binding templ
+        [] -> case failedMatches of
+            (failure, binding, templ):_ -> templateOrRecurse failure binding templ
+            _ -> templateOrRecurse False mempty undefined
     where
-        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> IO ([Tree RValue], Integer)
+        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> [Tree RValue] -> IO ([Tree RValue], Integer)
         -- We got a successful branch pattern match, let's rewrite to the template.
-        templateOrRecurse True bindings = do
+        templateOrRecurse True bindings templates = do
             treeLists <- mapM (betaReduce bindings) templates
             pure (concat treeLists, 1)
-        templateOrRecurse False _ = case rval of
+        templateOrRecurse False _ _ = case rval of
             -- If we failed to match a nub branch, we give it back unchanged
             Branch [] -> pure ([rval], 0)
             -- If we failed to match an inhabited branch, let's match the branch's children
@@ -154,17 +170,33 @@ betaReduce bindings (Leaf (PVariable pvar))
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
 betaReduce _ (Leaf pval) = pure [Leaf pval]
 
+
+-- Rule list used for execution
+newtype Rules = Rules [Rewrite RValue]
+
+unrules :: Rules -> [Rewrite RValue]
+unrules (Rules rewrites) = rewrites
+
+instance Show Rules where
+    show (Rules rewrites) = unlines . concat $ [
+        ["Rewrite rules:"],
+        ["--------------"],
+        show <$> rewrites]
+
+instance Semigroup Rules where
+    -- TODO: make this more efficient
+    Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
+
+instance Monoid Rules where
+    mempty = Rules []
+
+
 -- Left if no rewrites applied
 -- Right the new runtime values if a rewrite applied
-applyRewrites :: Tree RValue -> [Rewrite RValue] -> IO (Either [Tree RValue] [Tree RValue])
-applyRewrites rval rws = maybe (Left [rval]) Right <$> _applyRewrites rval rws
+applyRewrites :: Tree RValue -> Rules -> IO (Either [Tree RValue] [Tree RValue])
+applyRewrites rval rules = maybe (Left [rval]) Right <$> _applyRewrites rval rules
 
-_applyRewrites :: Tree RValue -> [Rewrite RValue] -> IO (Maybe [Tree RValue])
-_applyRewrites rval rws = do
-    out <- mapM maybeApply rws
-    pure . listToMaybe . catMaybes $ out
-    where
-        maybeApply :: Rewrite RValue -> IO (Maybe [Tree RValue])
-        maybeApply rewrite = apply rval rewrite <&> (\case
+_applyRewrites :: Tree RValue -> Rules -> IO (Maybe [Tree RValue])
+_applyRewrites rval rules = apply rval rules <&> (\case
             (_, 0) -> Nothing
             (rvals', _) -> Just rvals')

@@ -9,24 +9,6 @@ import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
 import Data.Functor.Identity (Identity(Identity))
 
--- Rule list used for execution
-newtype Rules = Rules [Rewrite RValue]
-
-unrules :: Rules -> [Rewrite RValue]
-unrules (Rules rewrites) = rewrites
-
-instance Show Rules where
-    show (Rules rewrites) = unlines . concat $ [
-        ["Rewrite rules:"],
-        ["--------------"],
-        show <$> rewrites]
-
-instance Semigroup Rules where
-    -- TODO: make this more efficient
-    Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
-
-instance Monoid Rules where
-    mempty = Rules []
 
 -- Runtime value eDSL -- 
 -- Runtime leafs
@@ -85,9 +67,9 @@ runStep [] = pure . pure $ []
 runStep trees = do 
     -- detect definitions
     noDefsTrees <- liftIORuleset $ mapM eatDefs trees
-    (Rules rewrites) <- look
+    rules <- look
     -- apply rewrites
-    let _lrTrees = flip applyRewrites rewrites <$> noDefsTrees 
+    let _lrTrees = flip applyRewrites rules <$> noDefsTrees 
     lrTrees <- lift $ sequence _lrTrees
     case rights lrTrees of
         -- no rewrites happened
