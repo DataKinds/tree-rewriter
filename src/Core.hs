@@ -73,9 +73,24 @@ tryApply rval (Leaf (PVariable pvar))
             _ -> pure False
         -- output accumulator
         "?>" -> addBinding pvar rval
+        -- input accumulator
+        "?<" -> error "Unimplemented input accumulator :?<"
+        -- cons to sexpr (pack) accumulator 
+        "?@" -> let
+                deepCollect :: [Tree RValue] -> [Tree RValue]
+                deepCollect [] = []
+                deepCollect (val:(Leaf end):_) = [val, Leaf end]
+                deepCollect (val:(Branch rest):_) = val : deepCollect rest
+                deepCollect [end] = [end]
+            in case rval of
+                (Leaf _) -> pure False
+                (Branch rs) -> addBinding pvar (Branch $ deepCollect rs)
+        -- sexpr to cons (unpack) accumulator 
+        "?%" -> error "Unimplemented input accumulator :?<"
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
-    -- Bind eager variable (aka: a var that only binds with a bare term)
+    -- Bind eager variable (aka: a var that only binds with a term that cannot be rewritten)
     | T.head pvar == '!' = case rval of
+        -- TODO: invoke searchPatterns to check for rewritability before matching
         (Leaf _) -> addBinding pvar rval
         (Branch _) -> pure False
     -- Bind regular pattern variable
@@ -108,21 +123,25 @@ tryApply _ _ = pure False
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- DFS the input tree to try applying all rewrite rules anywhere it's possible --
--- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
--- apply rval rr@(Rewrite pval templates) = let
-apply rval rr@(Rules rules) = let
-    patterns =rewritePattern <$> rules
+-- DFS the input tree, attempting to apply all rewrite rules at every location
+-- On a successful rule match, give back the pattern variable bindings and the template
+searchPatterns :: Tree RValue -> Rules -> Maybe (M.Map T.Text [Tree RValue], [Tree RValue])
+searchPatterns rval (Rules rules) = let
+    patterns = rewritePattern <$> rules
     templates = rewriteTemplate <$> rules
     makeMatchAttempts = tryApply rval <$> patterns
     matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
-    (failedMatches, possibleSuccess) = break fst3 matchAttemptsWithTemplates
+    (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
     in case possibleSuccess of 
-        (success, binding, templ):_ -> templateOrRecurse success binding templ
-        [] -> case failedMatches of
-            (failure, binding, templ):_ -> templateOrRecurse failure binding templ
-            _ -> templateOrRecurse False mempty undefined
+        (_, binding, templ):_ -> Just (binding, templ)
+        [] -> Nothing
+
+-- DFS the input tree to try applying all rewrite rules anywhere it's possible --
+-- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
+apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
+apply rval rules = case searchPatterns rval rules of 
+        Just (binding, templ) -> templateOrRecurse True binding templ
+        Nothing -> templateOrRecurse False mempty undefined
     where
         templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> [Tree RValue] -> IO ([Tree RValue], Integer)
         -- We got a successful branch pattern match, let's rewrite to the template.
@@ -134,7 +153,7 @@ apply rval rr@(Rules rules) = let
             Branch [] -> pure ([rval], 0)
             -- If we failed to match an inhabited branch, let's match the branch's children
             Branch rtrees -> do
-                treeList <- mapM (`apply` rr) rtrees
+                treeList <- mapM (`apply` rules) rtrees
                 let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
                 pure ([Branch . concat $ rtrees'], count)
             -- If we failed to match a single runtime value, we give it back unchanged
@@ -167,7 +186,10 @@ betaReduce bindings (Leaf (PVariable pvar))
             "?>" -> case bindings M.!? pvar of
                 Just rvals -> (putStrLn . unwords $ sexprprint <$> rvals) >> pure rvals
                 Nothing -> pure []
-            _ -> error . T.unpack $ T.append  "Special accumulator not found " pvar
+            -- handle all other accumulators as normal vars -- their behavior happens at matchtime 
+            _ -> pure $ case bindings M.!? pvar of
+                Just rvals -> reverse rvals
+                Nothing -> error . T.unpack $ T.append "Missing binding for special accumulator " pvar
     -- Substitute pattern variable normally
     | otherwise = pure $ case bindings M.!? pvar of
         Just rvals -> reverse rvals
