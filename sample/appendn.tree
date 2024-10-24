@@ -7,8 +7,9 @@
 ((appendn :xs :x +0) ~> (:xs))
 ((appendn :xs :x :!n) ~> (pp (appendn (:xs :x) :x (- :!n +1))))
 
-((pack (:?@)) ~> (:?@))
+((pack :?!@) ~> :?!@)
 
-(pack ([hello ok ok oko kok ok ok ok]))
-(appendn (hello) ok +10)
-(pack (appendn (hello) ok +10))
+((eager :?!@) ~> (forced :?!@))
+
+(eager (appendn (hello) ok +10))
+(nopack [hello ok ok oko kok ok ok ok])

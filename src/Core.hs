@@ -53,10 +53,12 @@ instance Show a => Show (Rewrite a) where
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
---          Input tree     Pattern to match         Updated variable bindings, along with whether the match succeeded                        
-tryApply :: Tree RValue -> Tree RValue -> State (M.Map T.Text [Tree RValue]) Bool
+tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching
+         -> Tree RValue                             -- Input tree
+         -> Tree RValue                             -- Pattern to match
+         -> State (M.Map T.Text [Tree RValue]) Bool -- Updated variable bindings, along with whether the match succeeded
 -- Bind pattern variables and special accumulators
-tryApply rval (Leaf (PVariable pvar))
+tryApply rules rval (Leaf (PVariable pvar))
     -- Bind special accumulator
     | T.head pvar == '?' = case pvar of
         -- sum accumulator 
@@ -75,61 +77,62 @@ tryApply rval (Leaf (PVariable pvar))
         "?>" -> addBinding pvar rval
         -- input accumulator
         "?<" -> error "Unimplemented input accumulator :?<"
-        -- cons to sexpr (pack) accumulator 
-        "?@" -> let
+        -- cons to sexpr (pack) eager accumulator 
+        "?!@" -> let
                 deepCollect :: [Tree RValue] -> [Tree RValue]
                 deepCollect [] = []
                 deepCollect (val:(Leaf end):_) = [val, Leaf end]
                 deepCollect (val:(Branch rest):_) = val : deepCollect rest
                 deepCollect [end] = [end]
-            in case rval of
-                (Leaf _) -> pure False
-                (Branch rs) -> addBinding pvar (Branch $ deepCollect rs)
-        -- sexpr to cons (unpack) accumulator 
-        "?%" -> error "Unimplemented input accumulator :?<"
+            in case trace ("SEARCHING " ++ sexprprint rval ++ " FOR RULES " ++ show rules) $ searchPatterns rval rules of
+                Just _ -> trace "GOTTA MATCH" $ pure False
+                Nothing -> trace ("NO MATCH FROM " ++ sexprprint rval) $ addBinding pvar . Branch . deepCollect $ case rval of
+                    Leaf r -> [Leaf r]
+                    Branch rs -> rs
+        -- sexpr to cons (unpack) eager accumulator 
+        "?!%" -> error "Unimplemented input accumulator :?!%"
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
     -- Bind eager variable (aka: a var that only binds with a term that cannot be rewritten)
-    | T.head pvar == '!' = case rval of
-        -- TODO: invoke searchPatterns to check for rewritability before matching
-        (Leaf _) -> addBinding pvar rval
-        (Branch _) -> pure False
+    | T.head pvar == '!' = case searchPatterns rval rules of
+        Just _ -> pure False
+        Nothing -> addBinding pvar rval
     -- Bind regular pattern variable
     | otherwise = addBinding pvar rval
     where
         -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
         addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
 -- Match ntree branch patterns exactly
-tryApply (Branch []) (Branch []) = pure True
-tryApply (Branch []) _ = pure False
-tryApply (Branch rtrees) (Branch pvals)
+tryApply _ (Branch []) (Branch []) = pure True
+tryApply _ (Branch []) _ = pure False
+tryApply rules (Branch rtrees) (Branch pvals)
     -- No point to checking patterns that match branches of the wrong length
     | length rtrees /= length pvals = pure False
-    | otherwise = and <$> zipWithM tryApply rtrees pvals
+    | otherwise = and <$> zipWithM (tryApply rules) rtrees pvals 
 -- Match symbol patterns
-tryApply (Leaf (RSymbol rsym)) (Leaf (RSymbol psym))
+tryApply _ (Leaf (RSymbol rsym)) (Leaf (RSymbol psym))
     | rsym == psym = pure True
     | otherwise = pure False
 -- Match number patterns
-tryApply (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
+tryApply _ (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
     | rnum == pnum = pure True
     | otherwise = pure False
 -- Match string patterns (TODO: use regex)
-tryApply (Leaf (RString rstr)) (Leaf (RString pstr))
+tryApply _ (Leaf (RString rstr)) (Leaf (RString pstr))
     | rstr == pstr = pure True
     | otherwise = pure False
 -- Catch failed matches
-tryApply _ _ = pure False
+tryApply _ _ _ = pure False
 
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- DFS the input tree, attempting to apply all rewrite rules at every location
+-- (THIS ISNT A DFS FIX THIS) DFS the input tree, attempting to apply all rewrite rules at every location
 -- On a successful rule match, give back the pattern variable bindings and the template
 searchPatterns :: Tree RValue -> Rules -> Maybe (M.Map T.Text [Tree RValue], [Tree RValue])
-searchPatterns rval (Rules rules) = let
+searchPatterns rval rr@(Rules rules) = let
     patterns = rewritePattern <$> rules
     templates = rewriteTemplate <$> rules
-    makeMatchAttempts = tryApply rval <$> patterns
+    makeMatchAttempts = tryApply rr rval <$> patterns
     matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
     (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
     in case possibleSuccess of 
@@ -140,24 +143,20 @@ searchPatterns rval (Rules rules) = let
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
 apply rval rules = case searchPatterns rval rules of 
-        Just (binding, templ) -> templateOrRecurse True binding templ
-        Nothing -> templateOrRecurse False mempty undefined
-    where
-        templateOrRecurse :: Bool -> M.Map T.Text [Tree RValue] -> [Tree RValue] -> IO ([Tree RValue], Integer)
-        -- We got a successful branch pattern match, let's rewrite to the template.
-        templateOrRecurse True bindings templates = do
-            treeLists <- mapM (betaReduce bindings) templates
-            pure (concat treeLists, 1)
-        templateOrRecurse False _ _ = case rval of
-            -- If we failed to match a nub branch, we give it back unchanged
-            Branch [] -> pure ([rval], 0)
-            -- If we failed to match an inhabited branch, let's match the branch's children
-            Branch rtrees -> do
-                treeList <- mapM (`apply` rules) rtrees
-                let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
-                pure ([Branch . concat $ rtrees'], count)
-            -- If we failed to match a single runtime value, we give it back unchanged
-            Leaf _ -> pure ([rval], 0)
+    Just (binding, templ) -> do
+        -- We found a match! Let's inject the variables
+        treeLists <- mapM (betaReduce binding) templ
+        pure (concat treeLists, 1)
+    Nothing -> case rval of
+        -- If we failed to match a nub branch, we give it back unchanged
+        Branch [] -> pure ([rval], 0)
+        -- If we failed to match an inhabited branch, let's match the branch's children
+        Branch rtrees -> do
+            treeList <- mapM (`apply` rules) rtrees
+            let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
+            pure ([Branch . concat $ rtrees'], count)
+        -- If we failed to match a single runtime value, we give it back unchanged
+        Leaf _ -> pure ([rval], 0)
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
