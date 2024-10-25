@@ -8,8 +8,8 @@
 ((appendn :xs :x :!n) ~> (pp (appendn (:xs :x) :x (- :!n +1))))
 
 ((pack :?!@) ~> :?!@)
+((unpack :?!%) ~> :?!%)
 
-((eager :?!@) ~> (forced :?!@))
-
-(eager (appendn (hello) ok +10))
-(nopack [hello ok ok oko kok ok ok ok])
+(pack (appendn (hello) ok +10))
+(pack [hello ok ok oko kok ok ok ok])
+(unpack (hello ok ok oko kok ok ok ok))

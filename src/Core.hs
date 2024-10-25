@@ -13,6 +13,7 @@ import Language.Haskell.TH.Syntax
 import Data.Foldable (foldrM)
 import Data.Functor ((<&>))
 import Debug.Trace (trace)
+import Data.Bool (Bool(True))
 
 -- Runtime values, including pattern variables
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift, Eq, Ord)
@@ -84,18 +85,16 @@ tryApply rules rval (Leaf (PVariable pvar))
                 deepCollect (val:(Leaf end):_) = [val, Leaf end]
                 deepCollect (val:(Branch rest):_) = val : deepCollect rest
                 deepCollect [end] = [end]
-            in case trace ("SEARCHING " ++ sexprprint rval ++ " FOR RULES " ++ show rules) $ searchPatterns rval rules of
-                Just _ -> trace "GOTTA MATCH" $ pure False
-                Nothing -> trace ("NO MATCH FROM " ++ sexprprint rval) $ addBinding pvar . Branch . deepCollect $ case rval of
+            in if bfsPatterns rval rules then pure False else addBinding pvar . Branch . deepCollect $ case rval of
                     Leaf r -> [Leaf r]
                     Branch rs -> rs
         -- sexpr to cons (unpack) eager accumulator 
-        "?!%" -> error "Unimplemented input accumulator :?!%"
+        "?!%" -> case rval of 
+            Leaf _ -> pure False
+            Branch rs -> if bfsPatterns rval rules then pure False else addBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
     -- Bind eager variable (aka: a var that only binds with a term that cannot be rewritten)
-    | T.head pvar == '!' = case searchPatterns rval rules of
-        Just _ -> pure False
-        Nothing -> addBinding pvar rval
+    | T.head pvar == '!' = if bfsPatterns rval rules then pure False else addBinding pvar rval
     -- Bind regular pattern variable
     | otherwise = addBinding pvar rval
     where
@@ -126,7 +125,7 @@ tryApply _ _ _ = pure False
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- (THIS ISNT A DFS FIX THIS) DFS the input tree, attempting to apply all rewrite rules at every location
+-- Check the tip of the input tree, attempting to apply all rewrite rules at the tip
 -- On a successful rule match, give back the pattern variable bindings and the template
 searchPatterns :: Tree RValue -> Rules -> Maybe (M.Map T.Text [Tree RValue], [Tree RValue])
 searchPatterns rval rr@(Rules rules) = let
@@ -139,7 +138,20 @@ searchPatterns rval rr@(Rules rules) = let
         (_, binding, templ):_ -> Just (binding, templ)
         [] -> Nothing
 
--- DFS the input tree to try applying all rewrite rules anywhere it's possible --
+-- BFS the input tree to try applying all rewrite rules anywhere it's possible.
+-- Similar to `apply`, just with no rewriting happening. Used in eager matching
+bfsPatterns :: Tree RValue -> Rules -> Bool
+bfsPatterns rval rules = case searchPatterns rval rules of 
+    Just (binding, templ) -> True
+    Nothing -> case rval of
+        -- We failed to match a nub branch
+        Branch [] -> False
+        -- We failed to match a single runtime value
+        Leaf _ -> False
+        -- We failed to match an inhabited branch, let's BFS
+        Branch rtrees -> any (`bfsPatterns` rules) rtrees
+
+-- DFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
 apply rval rules = case searchPatterns rval rules of 
