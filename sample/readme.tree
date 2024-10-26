@@ -20,5 +20,7 @@
 ((-1 +1) ~> +0)
 ((-1 +0) ~> +0)
 
+((puts :?>) ~> :?>)
 ((give me a depth +0 tree of :x) ~> :x)
-((give me a depth :n tree of :x) ~> (give me a depth (-1 :n) tree of (:x :x)))
+((give me a depth :!n tree of :x) ~> (puts (give me a depth (-1 :!n) tree of (:x :x))))
+(give me a depth +2 tree of wow)

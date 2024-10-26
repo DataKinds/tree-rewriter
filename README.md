@@ -57,26 +57,54 @@ Let's demonstrate eager variables by building up a larger example:
 (; (Comments! This just deletes all terms of the form (; ...) ))
 ((; :comment) ~>)
 ==> ROSIN SAYS: (defined "(; :comment) ~> ")
+(; (This deletes the output Rosin generates for definitions, so we don't have to worry about showing it.))
+((defined :str) ~>)
 
 (; (Let's establish all the arithmetic we need for this example!))
 ((-1 +3) ~> +2)
-==> ROSIN SAYS: (defined "(-1 +3) ~> +2")
 ((-1 +2) ~> +1)
-==> ROSIN SAYS: (defined "(-1 +2) ~> +1")
 ((-1 +1) ~> +0)
-==> ROSIN SAYS: (defined "(-1 +1) ~> +0")
 ((-1 +0) ~> +0)
-==> ROSIN SAYS: (defined "(-1 +0) ~> +0")
 
 (; (Now let's try to write a "function" that makes a 2-tree of depth N filled up with a certain value.))
-(; (First, the base case: a depth 0 tree gives back the value.))
+(; (First, the base case... a depth 0 tree gives back the value directly.))
 ((give me a depth +0 tree of :x) ~> :x)
-==> ROSIN SAYS: (defined "(give me a depth +0 tree of :x) ~> :x")
+(; (Then, the recursive case.))
 ((give me a depth :n tree of :x) ~> (give me a depth (-1 :n) tree of (:x :x)))
-==> ROSIN SAYS: (defined "(give me a depth :n tree of :x) ~> (give me a depth (-1 :n) tree of (:x :x))")
-(; (Without eager variables, ))
+(; (And let's execute the function.))
+(give me a depth +2 tree of wow)
+==> ROSIN HANGS.
 ```
 
+Why is this? Let's use a *special accumulator* which prints the intermediate values to find out.
+
+```
+((puts :?>) ~> :?>)
+((give me a depth +0 tree of :x) ~> :x)
+((give me a depth :n tree of :x) ~> (puts (give me a depth (-1 :n) tree of (:x :x))))
+(give me a depth +2 tree of wow)
+
+==> ROSIN GINGERLY PRESENTS THE FOLLOWING TO STANDARD OUT
+(give me a depth (-1 +2) tree of (wow wow))
+(give me a depth (-1 (-1 +2)) tree of ((wow wow) (wow wow)))
+(give me a depth (-1 (-1 (-1 +2))) tree of (((wow wow) (wow wow)) ((wow wow) (wow wow))))
+(give me a depth (-1 (-1 (-1 (-1 +2)))) tree of ((((wow wow) (wow wow)) ((wow wow) (wow wow))) (((wow wow) (wow wow)) ((wow wow) (wow wow)))))
+(give me a depth (-1 (-1 (-1 (-1 (-1 +2))))) tree of (((((wow wow) (wow wow)) ((wow wow) (wow wow))) (((wow wow) (wow wow)) ((wow wow) (wow wow)))) ((((wow wow) (wow wow)) ((wow wow) (wow wow))) (((wow wow) (wow wow)) ((wow wow) (wow wow))))))
+... and so forth
+```
+
+Since Rosin was always able to match the `(give me a depth :n tree of :x)` rule, they never traversed into the tree to match a `(-1 ...)` rule. So the arithmetic was never evaluated as a result. We can give Rosin an eager variable in the recursive pattern and they'll refuse to match the unevaluated `(-1 ...)` tree because another rule exists which can match it. This is spelled `(give me a depth :!n tree of :x)` where adding a bang symbol after the colon makes a variable eager. Watch this:
+
+```
+((puts :?>) ~> :?>)
+((give me a depth +0 tree of :x) ~> :x)
+((give me a depth :!n tree of :x) ~> (puts (give me a depth (-1 :!n) tree of (:x :x))))
+(give me a depth +2 tree of wow)
+==> ROSIN RECURSES WITH A FEW INTERMEDIATE STEPS:
+(give me a depth (-1 +2) tree of (wow wow))
+(give me a depth (-1 +1) tree of ((wow wow) (wow wow)))
+==> ROSIN THEN ULTIMATELY SAYS: ((wow wow) (wow wow))
+```
 
 ---
 
