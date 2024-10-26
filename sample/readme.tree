@@ -1,0 +1,24 @@
+(this (is (a (tree))))
+
+((this (is :rest)) ~> (woah! it's :rest))
+
+
+((lil function f +0) ~> +0)
+((lil function f :n) ~> +1)
+
+(lil function f +2)
+(lil function f +1)
+(lil function f +0)
+
+
+(; (Comments! This just deletes all terms of the form (; ...) ))
+((; :comment) ~>)
+
+(; (Let's establish all the arithmetic we need for this example!))
+((-1 +3) ~> +2)
+((-1 +2) ~> +1)
+((-1 +1) ~> +0)
+((-1 +0) ~> +0)
+
+((give me a depth +0 tree of :x) ~> :x)
+((give me a depth :n tree of :x) ~> (give me a depth (-1 :n) tree of (:x :x)))
