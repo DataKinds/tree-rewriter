@@ -1,5 +1,7 @@
 # Rosin
 
+### Overview
+
 Rosin is a _tree rewriting language_. That means you write rules which mutate trees.
 
 What's a tree? Trees are *terms* represented with S-expressions:
@@ -26,6 +28,8 @@ this (is (a (tree)))
 ==> ROSIN SAYS: (woah! it's (a (tree)))
 ```
 
+### Patterns and variables
+
 The left side of the `~>` in a rule is a *pattern*. Barring all else, Rosin will only rewrite a term if it matches exactly what they saw in the pattern. There are a few exceptions to this. You may present Rosin with a *variable*, prefixed with `:`, which they will match against any term:
 ```
 ((my :a rule) ~> (my totally :a rule))
@@ -48,6 +52,8 @@ Sometimes, you may want Rosin to preferentially apply one rule instead of anothe
 (lil function f +0)
 ==> ROSIN SAYS: +0
 ```
+
+### Eager variables 
 
 The other way to do this is through the use of *eager variables*. Rosin would very much like to match eager variables last, allowing all other computation to happen first. You write an eager variable with the prefix `:!` and Rosin will not allow the pattern to match if that variable could be matched by another rule. 
 
@@ -93,7 +99,7 @@ Why is this? Let's use a *special accumulator* which prints the intermediate val
 ... and so forth
 ```
 
-Since Rosin was always able to match the `(give me a depth :n tree of :x)` rule, they never traversed into the tree to match a `(-1 ...)` rule. So the arithmetic was never evaluated as a result. We can give Rosin an eager variable in the recursive pattern and they'll refuse to match the unevaluated `(-1 ...)` tree because another rule exists which can match it. This is spelled `(give me a depth :!n tree of :x)` where adding a bang symbol after the colon makes a variable eager. Watch this:
+Since Rosin was always able to match the `(give me a depth :n tree of :x)` rule, they never traversed into the tree to match a `(-1 ...)` rule. So the arithmetic was never evaluated as a result. We can give Rosin an eager variable in the recursive pattern and they'll refuse to match the unevaluated `(-1 ...)` tree because another rule exists which can match it. This is spelled `(give me a depth :!n tree of :x)`. Watch this:
 
 ```
 ((puts :?>) ~> :?>)
@@ -105,6 +111,8 @@ Since Rosin was always able to match the `(give me a depth :n tree of :x)` rule,
 (give me a depth (-1 +1) tree of ((wow wow) (wow wow)))
 ==> ROSIN THEN ULTIMATELY SAYS: ((wow wow) (wow wow))
 ```
+
+In this way, Rosin is able to force something that resembles eager evaluation using these eager variables. Do note there is a performance cost here: a subsearch of the input trees is performed to ensure no rule matches the tree.
 
 ---
 
