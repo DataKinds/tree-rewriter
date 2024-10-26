@@ -142,7 +142,7 @@ searchPatterns rval rr@(Rules rules) = let
 -- Similar to `apply`, just with no rewriting happening. Used in eager matching
 bfsPatterns :: Tree RValue -> Rules -> Bool
 bfsPatterns rval rules = case searchPatterns rval rules of 
-    Just (binding, templ) -> True
+    Just _ -> True
     Nothing -> case rval of
         -- We failed to match a nub branch
         Branch [] -> False

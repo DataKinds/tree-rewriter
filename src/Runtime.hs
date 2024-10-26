@@ -50,7 +50,7 @@ makeRules = flip execAccum mempty
 
 -- DFS a tree looking for definitions. Consume them and delete the tree branch containing the def.
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [rstr ruleStr])
+eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [rsym "defined", rstr ruleStr])
     where
         ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
 eatDefs (Branch bs) = Branch <$> mapM eatDefs bs
