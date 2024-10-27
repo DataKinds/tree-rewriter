@@ -1,5 +1,7 @@
 # Rosin
 
+## Easy Intro
+
 ### Overview
 
 Rosin is a _tree rewriting language_. That means you write rules which mutate trees.
@@ -113,6 +115,37 @@ Since Rosin was always able to match the `(give me a depth :n tree of :x)` rule,
 ```
 
 In this way, Rosin is able to force something that resembles eager evaluation using these eager variables. Do note there is a performance cost here: a subsearch of the input trees is performed to ensure no rule matches the tree.
+
+## The Nitty Gritty
+
+### Bare term datatypes
+
+Inside of the S-expressions, there are a few datatypes that can occur as tree leaves. The trees are parameterized over these datatypes:
+
+| Name | Spelling | Description |
+|------|----------|-------------|
+| Number | `\+-?[0987654321.]+` | Bignum. Not stored as text.
+| Symbol | `[^[]():/ \t]+` | 
+| Pattern variable | `:[^[]():/ \t]+` | 
+
+### Special accumulators
+
+These special accumulators take some sort of action on the matched values. Some of them match eagerly, which is indicated by a bang `!`. All are prefaced with a colon `:` to indicate they match like pattern variables.
+
+| Name | Spelling | Matches | Behavior |
+|------|----------|---------|----------|
+| Sum | `:?+` | Only numbers | Sums up all matched terms, produces one number | 
+| Negate | `:?-` | Only numbers | Negates (additive inverse) all matched terms, produces as many terms as matched | 
+| Product | `:?*` | Only numbers | Multiplies all matched terms,  produces one number | 
+| Output | `:?>` | Anything | Writes the term to standard out, produces it unchanged | 
+| Input | `:?<` | Anything | Still TODO | 
+| Pack | `:?!@` | Only branches | Converts a cons list to a S-expression. This accumulator matches eagerly, so all computation must be completed before packing. | 
+| Unpack | `:?!%` | Only branches | Converts an S-expression to a cons list. This accumulator matches eagerly, so all computation must be completed before unpacking. | 
+
+
+## Planned features
+* Allow all special accumulators to be used either eagerly or non-eagerly
+* Input accumulator
 
 ---
 
