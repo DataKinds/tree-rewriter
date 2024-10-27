@@ -2,7 +2,7 @@
 
 Rosin is a *tree rewriting language*. This means you pass the interpreter rewrite rules and input trees, and the interpreter runs computations by applying these rewrite rules.
 
-Interested in learning more? Visit <INTRO.md>.
+Interested in learning more? Visit [INTRO.md](./INTRO.md).
 
 ## Installation and usage
 
