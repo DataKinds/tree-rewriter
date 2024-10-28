@@ -50,7 +50,7 @@ library:
   source-dirs: src
 
 executables:
-  tree-rewriter-exe:
+  rosin:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -61,7 +61,7 @@ executables:
     - tree-rewriter
 
 tests:
-  tree-rewriter-test:
+  rosin-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:

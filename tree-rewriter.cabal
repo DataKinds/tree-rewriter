@@ -50,7 +50,7 @@ library
     , transformers
   default-language: Haskell2010
 
-executable tree-rewriter-exe
+executable rosin
   main-is: Main.hs
   other-modules:
       Paths_tree_rewriter
@@ -74,7 +74,7 @@ executable tree-rewriter-exe
     , tree-rewriter
   default-language: Haskell2010
 
-test-suite tree-rewriter-test
+test-suite rosin-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
