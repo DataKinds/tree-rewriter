@@ -151,7 +151,7 @@ bfsPatterns rval rules = case searchPatterns rval rules of
         -- We failed to match an inhabited branch, let's BFS
         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
--- DFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
+-- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
 apply rval rules = case searchPatterns rval rules of 
@@ -216,8 +216,9 @@ unrules (Rules rewrites) = rewrites
 
 instance Show Rules where
     show (Rules rewrites) = unlines . concat $ [
-        ["Rewrite rules:"],
-        ["--------------"],
+        ["+---------------+"],
+        ["| Rewrite rules |"],
+        ["+---------------+"],
         show <$> rewrites]
 
 instance Semigroup Rules where

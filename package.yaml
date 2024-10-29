@@ -26,6 +26,7 @@ dependencies:
 - containers
 - template-haskell
 - parsec
+- optparse-applicative
 
 ghc-options:
 - -Wall
