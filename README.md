@@ -16,6 +16,29 @@ Then, the interpreter will be available in Stack's standard install directory. R
 rosin sample/main.tree
 ```
 
+You should see a help prompt that looks like this: 
+
+```
+$ rosin --help
+Rosin (they/them) is a tree rewriting language
+
+Usage: rosin [INFILE] [-p|--print-output] [-v|--verbose]
+
+  Invoke Rosin on input, either from standard input or from a file.
+
+Available options:
+  INFILE                   Rosin file to read and interpret
+  -p,--print-output        Whether to print the final state of the input tree.
+  -v,--verbose             Whether to print verbose debugging information.
+                           Implies -p.
+  -h,--help                Show this help text
+
+Created by at/DataKinds in 2024. Comes with one warranty: if you can prove that
+Rosin caused you physical or otherwise material injury, the current maintainer
+will arrive and dispense one (1) sad platitude regarding your condition.
+```
+
+Note that running it without arguments will cause Rosin to attempt to read from standard input.
 
 ## The Nitty Gritty
 
