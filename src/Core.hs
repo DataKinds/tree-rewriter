@@ -195,7 +195,7 @@ betaReduce bindings (Leaf (PVariable pvar))
                 Nothing -> []
             -- output accumulator
             "?>" -> case bindings M.!? pvar of
-                Just rvals -> (putStrLn . unwords $ sexprprint <$> rvals) >> pure rvals
+                Just rvals -> (putStrLn . unwords . reverse $ sexprprint <$> rvals) >> pure rvals
                 Nothing -> pure []
             -- handle all other accumulators as normal vars -- their behavior happens at matchtime 
             _ -> pure $ case bindings M.!? pvar of

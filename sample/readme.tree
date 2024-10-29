@@ -24,3 +24,12 @@
 ((give me a depth +0 tree of :x) ~> :x)
 ((give me a depth :!n tree of :x) ~> (puts (give me a depth (-1 :!n) tree of (:x :x))))
 (give me a depth +2 tree of wow)
+
+(puts hello)
+
+((puts :?> :?>) ~> :?>)
+(puts hello (world))
+
+((:?+ plus :?+ plus :?+) ~> :?+)
+(+5 plus +6 plus +7)
+(+5 plus (+0 plus +1 plus +2) plus +7)
