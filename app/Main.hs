@@ -108,5 +108,5 @@ main = do
                fullDesc
             <> progDesc "Invoke Rosin on input, either from standard input or from a file." 
             <> header "Rosin (they/them) is a tree rewriting language" 
-            <> footer "Created by at/DataKinds in 2024. Named lovingly after an OC. Comes with one warranty: if you can prove that Rosin caused you physical or otherwise material injury, the current maintainer will arrive and dispense one (1) kiss on the injured area."
+            <> footer "Created by at/DataKinds in 2024. Named lovingly after an OC. Comes with one warranty: if you can prove that Rosin caused you physical or otherwise material injury, the current maintainer will arrive and dispense one (1) sad platitude regarding your condition."
             )
