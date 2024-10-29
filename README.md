@@ -42,7 +42,7 @@ Note that running it without arguments will cause Rosin to attempt to read from 
 
 ## The Nitty Gritty
 
-## Template Haskell
+### Template Haskell
 
 This repo does contain a Template Haskell implementation of the langugage you can embed into your programs. Use with caution, this whole repo is currently very unstable.
 
