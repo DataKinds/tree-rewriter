@@ -44,6 +44,7 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , optparse-applicative
     , parsec
     , template-haskell
     , text
@@ -67,6 +68,7 @@ executable rosin
   build-depends:
       base >=4.7 && <5
     , containers
+    , optparse-applicative
     , parsec
     , template-haskell
     , text
@@ -92,6 +94,7 @@ test-suite rosin-test
   build-depends:
       base >=4.7 && <5
     , containers
+    , optparse-applicative
     , parsec
     , template-haskell
     , text

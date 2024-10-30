@@ -99,6 +99,22 @@ These special accumulators take some sort of action on the matched values. Some 
 * Parse strings and allow regex in pattern variables which match strings.
 * Improved performance!
 
+## Comparison with Modal/Thuesday
+
+Rosin takes a large amount of inspiration from [Modal](https://wryl.tech/projects/modal.html), a tree rewriting language by *wryl*, and [Thuesday](https://wiki.xxiivv.com/site/modal), an extension to Modal by Hundred Rabbits. Rosin would also not exist in its current form without a great deal of input from *wryl* and others on the PLT and the Concatenative Discord servers. Here are a few notable differences:
+
+* Modal/Thuesday are fundamentally *string rewriting* systems, whereas Rosin is fundamentally a *tree rewriting* system. This has a handful of knock on effects:
+  * Modal is less picky about matching patterns offset within trees, since rules match via a linear scan of the input. So, a Modal rule like `<> (my awesome rule) (my very awesome rule)` will rewrite `(this gets modified by my awesome rule)` to `(this gets modified by my very awesome rule)`. But a Rosin rule like `((my awesome rule) ~> (my very awesome rule))` will NOT match against `(this gets modified by my awesome rule)`. 
+    * Want to match offsets inside trees in Rosin? Use the [unpack accumulator](README.md#special-accumulators) with a pattern that matches cons lists.
+  * In theory, Rosin may be faster than Modal for small rewrites on very large data structures. The current Modal interpreter has a constant overhead of copying a size 0x4000 memory region on every rewrite, even when no rules apply (see https://git.sr.ht/~rabbits/modal/tree/master/item/src/modal.c). Rosin has a constant overhead of walking the entire input tree, but small rewrites will only swap pointers in the parsed tree (and eventually trigger a GC sweep) under Haskell's data model. No data copying required. I have not measured it, but I suspect two things to be true, making this currently a moot point: 
+    1. Rosin's overall constant overhead per rewrite step is likely much higher thanks to Haskell's generally unperformant runtime & my overuse of singly-linked lists, and
+    2. The size of input tree needed to outweigh that constant overhead is larger than the 0x4000-byte region that Modal allocates to work in.
+* Touch on numbered arguments to registers in Modal
+* Cons list syntax
+* No rule deletion in Rosin
+* Permacomputing + the intended target + Haskell's declaritivity lets me iterate faster
+* Eager variables + evaluation ordering
+
 ---
 
 tree rewriter is totally in progress. it is currently a tree rewriting language supporting syntactic sugar for cons lists, special named accumulators for executing side effects and doing arithmetic, and bigint support. it is currently declarative: a file is read for rewriting rules first, then passed back over to rewrite all the trees.
