@@ -63,7 +63,7 @@ liftIORuleset = mapAccumT (\(Identity a) -> pure a)
 -- Rewrite terms once, creating or modifying definitions as they arise
 -- Left if no rewrite rules applied, right if some did
 runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
-runStep [] = pure . pure $ []
+runStep [] = pure . Left $ []
 runStep trees = do 
     -- detect definitions
     noDefsTrees <- liftIORuleset $ mapM eatDefs trees

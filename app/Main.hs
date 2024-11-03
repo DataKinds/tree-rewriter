@@ -19,7 +19,7 @@ ensureTHCompilation = [
         [a|(+1 :asd) ~> (+3 :asd)|],
         [a|(+1 :a +3) ~> (+3 :a +1)|],
         [a|[+1 +2 three four :a :b] ~> [:a :b]|],
-        [a|[+1 +2 three four :a ..:b] ~> [:a ..:b]|],
+        [a|[+1 +2 three four :a ::b] ~> [:a :b]|],
         [a|(if true then :a else :b) ~> :a|],
         [a|(if false then :a else :b) ~> :b|],
         [a|(true) ~> true|],
