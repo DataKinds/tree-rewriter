@@ -11,7 +11,7 @@ import Text.Parsec
       many1,
       try,
       unexpected,
-      ParsecT, skipMany, oneOf, notFollowedBy, parserTraced )
+      ParsecT, skipMany, oneOf, notFollowedBy, parserTraced, anyChar, manyTill )
 import Runtime ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
 import Core ( Tree, RValue, Rewrite (Rewrite) ) 
 import Data.Char ( isSpace, isDigit )
@@ -32,7 +32,7 @@ olFlex :: RuleParser a -> RuleParser a
 olFlex p = p <* skipMany (satisfy (\c -> isSpace c && (c `notElem` ("\n\r" :: String))))
 
 psymCharParser :: RuleParser Char
-psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/()[]" :: String)))
+psymCharParser = satisfy (\c -> not (isSpace c) && (c `notElem` (":/()[]\"" :: String)))
 
 psymRawParser :: RuleParser String
 psymRawParser = some psymCharParser
@@ -43,9 +43,13 @@ psymParser = psym <$> psymRawParser
 pvarParser :: RuleParser (Tree RValue)
 pvarParser = char ':' *> (pvar <$> psymRawParser)
 
--- TODO
+-- parses "hello world"
 pstrParser :: RuleParser (Tree RValue)
-pstrParser = char '/' *> (pstr <$> psymRawParser)
+pstrParser = do
+    flex . char $ '"'
+    pstr <$> manyTill anyEscapedChar (try $ char '"')
+    where
+        anyEscapedChar = (try $ char '\\' *> anyChar) <|> anyChar
 
 pnumParser :: RuleParser (Tree RValue)
 pnumParser = try (char '+' *> (pnum . read <$> many1 (oneOf "0123456789-")))
@@ -62,7 +66,7 @@ pbranchParser = do
 ptailListParser :: RuleParser (Tree RValue)
 ptailListParser = try $ do
     _ <- flex . char $ '['
-    let tailParser =  char ':' *> pvarParser
+    let tailParser = char ':' *> pvarParser
     lits <- many $ do 
         notFollowedBy tailParser
         flex patternLiteralParser
@@ -85,7 +89,5 @@ plistParser = do
 patternLiteralParser :: RuleParser (Tree RValue)
 patternLiteralParser = choice [pbranchParser, ptailListParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
-patternParser = try patternLiteralParser
-
 programParser :: RuleParser [Tree RValue]
-programParser = (fmap join . many . flex) (some . flex $ patternParser)
+programParser = some . flex . try $ patternLiteralParser
