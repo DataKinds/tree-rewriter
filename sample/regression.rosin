@@ -1,0 +1,6 @@
+#!/usr/bin/env rosin
+
+((; :comment) ~>)
+
+(; "Need some way to do equality checking!")
+((t :desc :val :expected) ~> )
