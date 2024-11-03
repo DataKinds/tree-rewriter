@@ -33,3 +33,6 @@
 ((:?+ plus :?+ plus :?+) ~> :?+)
 (+5 plus +6 plus +7)
 (+5 plus (+0 plus +1 plus +2) plus +7)
+
+([head ::tail] ~> :tail)
+[head hello world] 

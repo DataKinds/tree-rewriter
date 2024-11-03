@@ -161,10 +161,11 @@ Cons lists are lists formed by nested pairs of elements, called *cons cells*.
 ==> ROSIN SAYS: (I (am (a (cons (list! (Check (out (my (nesting... ())))))))))
 ```
 
-The last piece of special pattern matching syntax allows you to explicitly match the tail of a list in a cons list. It used to look like this:
+We noted [above](INTRO.md#patterns-and-variables) that there was one more special type of pattern variable to talk about. That is the tail of a cons list: Rosin understands some special syntax to explicitly match the tail of a cons list. Check it out:
 
 ```
-([head ..:tail] ~> ..:tail)
+([head ::tail] ~> :tail)
+[head hello world] 
+==> ROSIN SAYS: (hello (world ()))
 ```
 
-but is currently TODO.
