@@ -1,7 +1,7 @@
 ((; :comment) ~>)
 
-((t :desc :!val :val) ~> (test success :desc :val))
-((t :desc :!got :wanted) ~> (test failure :desc got :got wanted :wanted))
+((t :desc :!val :val) ~> (✅ :desc :val))
+((t :desc :!got :wanted) ~> (❌ :desc got :got wanted :wanted))
 
 (t "test failure" (+1 +3 +3) (+1 +2 +3))
 (t "test success" (+1 +2 +3) (+1 +2 +3))
