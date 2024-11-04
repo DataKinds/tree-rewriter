@@ -7,7 +7,7 @@ import qualified Data.Text as T
 import Data.Maybe
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, modify, runState )
+import Control.Monad.Trans.State.Lazy ( State, modify, runState, get, gets )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 import Data.Foldable (foldrM)
@@ -24,7 +24,7 @@ instance Show RValue where
     show (RNumber t) = '+':show t
     show (PVariable t) = ':':T.unpack t
 
-data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable)
+data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable, Eq)
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
@@ -94,12 +94,19 @@ tryApply rules rval (Leaf (PVariable pvar))
             Branch rs -> if bfsPatterns rval rules then pure False else addBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
     -- Bind eager variable (aka: a var that only binds with a term that cannot be rewritten)
-    | T.head pvar == '!' = if bfsPatterns rval rules then pure False else addBinding pvar rval
+    | T.head pvar == '!' = if bfsPatterns rval rules then pure False else bindIfEqual (T.tail pvar) rval
     -- Bind regular pattern variable
-    | otherwise = addBinding pvar rval
+    | otherwise = bindIfEqual pvar rval
     where
         -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
         addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
+        -- takes a name and a runtime value, succeeds if the new binding equals the old one
+        bindIfEqual name binding = do
+            prevBinding <- gets (M.lookup name)
+            case prevBinding of 
+                Just [] -> error "Unexpected empty binding"
+                Just (rval:_) -> pure $ binding == rval
+                Nothing -> modify (M.insert name [binding]) >> pure True
 -- Match ntree branch patterns exactly
 tryApply _ (Branch []) (Branch []) = pure True
 tryApply _ (Branch []) _ = pure False
