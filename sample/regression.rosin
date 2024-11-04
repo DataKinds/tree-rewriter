@@ -1,7 +1,29 @@
 ((; :comment) ~>)
 
-(; "Need some way to do equality checking!")
-((t :desc :!val :val) ~> (sucessful t :desc :val))
+((t :desc :!val :val) ~> (test success :desc :val))
+((t :desc :!got :wanted) ~> (test failure :desc got :got wanted :wanted))
 
-(t "hello world" (1 3 3) (1 2 3))
-(t "hello world" (1 2 3) (1 2 3))
+(t "test failure" (+1 +3 +3) (+1 +2 +3))
+(t "test success" (+1 +2 +3) (+1 +2 +3))
+
+(t "Basic rule"
+    ((hello ~> world) hello) ((defined "hello ~> world") world))
+
+(t "Pattern variable"
+    (((hello :a) ~> (asdjklh :a)) (hello world)) ((defined "(hello :a) ~> (asdjklh :a)") (asdjklh world)))
+
+(t "Sum accumulator"
+    (((+ :?+ :?+ :?+) ~> :?+) (+ +69 +420 +-1337)) ((defined "(+ :?+ :?+ :?+) ~> :?+") +-848))
+
+(t "Cons lists parse"
+    ([this is a cons list]) ((this (is (a (cons (list ())))))))
+
+(t "Cons list tail variable"
+    (([cons tail ::tail] ~> :tail)
+      [cons head]
+      [cons tail]
+      [cons tail rest of the list]) 
+    ((defined "(cons (tail :tail)) ~> :tail")
+     (cons (head ()))
+     ()
+     (rest (of (the (list ()))))))

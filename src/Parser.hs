@@ -11,7 +11,7 @@ import Text.Parsec
       many1,
       try,
       unexpected,
-      ParsecT, skipMany, oneOf, notFollowedBy, parserTraced, anyChar, manyTill )
+      ParsecT, skipMany, oneOf, notFollowedBy, parserTraced, anyChar, manyTill, eof )
 import Runtime ( WithRuleset, psym, pstr, pnum, pbranch, pvar, addRule )
 import Core ( Tree, RValue, Rewrite (Rewrite) ) 
 import Data.Char ( isSpace, isDigit )
@@ -90,4 +90,4 @@ patternLiteralParser :: RuleParser (Tree RValue)
 patternLiteralParser = choice [pbranchParser, ptailListParser, plistParser, pvarParser, pstrParser, pnumParser, psymParser]
 
 programParser :: RuleParser [Tree RValue]
-programParser = some . flex . try $ patternLiteralParser
+programParser = (some . flex . try $ patternLiteralParser) <* eof
