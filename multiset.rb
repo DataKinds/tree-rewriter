@@ -21,7 +21,6 @@ def rewrite()
         $bag.merge!(pat) { |_, bagged, removed| bagged - removed }
         $bag.merge!(set) { |_, bagged, newly| newly + bagged }
         puts $bag
-        break
       end
     end 
     break unless didMatch

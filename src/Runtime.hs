@@ -3,7 +3,6 @@ module Runtime where
 import Core
 import Control.Monad.Trans.Accum
 import qualified Data.Text as T
-import Data.Foldable (foldrM)
 import Debug.Trace
 import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
@@ -11,18 +10,19 @@ import Data.Functor.Identity (Identity(Identity))
 
 
 -- Runtime value eDSL -- 
--- Runtime leafs
+-- Runtime leaf values
 sym :: String -> Tree RValue
 sym = Leaf . RSymbol . T.pack
-rstr :: String -> Tree RValue
-rstr = Leaf . RString . T.pack
-rnum :: Integer -> Tree RValue
-rnum = Leaf . RNumber
+str :: String -> Tree RValue
+str = Leaf . RString . T.pack
+num :: Integer -> Tree RValue
+num = Leaf . RNumber
+-- Pattern variables 
+pvar :: String -> Tree RValue
+pvar = Leaf . PVariable . T.pack
 -- Runtime branch
-rbranch :: [Tree a] -> Tree a
-rbranch = Branch
-
-pstr = rstr; pnum = rnum; pbranch = rbranch; 
+branch :: [Tree a] -> Tree a
+branch = Branch
 
 -- Ruleset: Pattern and template building eDSL --
 type WithRuleset = Accum Rules
@@ -39,10 +39,6 @@ rule pattern templates = addRule $ Rewrite pattern templates
 (~>) :: Tree RValue -> [Tree RValue] -> Ruleset
 (~>) = rule
 
--- Pattern variables 
-pvar :: String -> Tree RValue
-pvar = Leaf . PVariable . T.pack
-
 -- Running Ruleset --
 -- Create a rules object from the Ruleset eDSL
 makeRules :: WithRuleset a -> Rules 
@@ -50,7 +46,7 @@ makeRules = flip execAccum mempty
 
 -- DFS a tree looking for definitions. Consume them and delete the tree branch containing the def.
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [sym "defined", rstr ruleStr])
+eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (branch [sym "defined", str ruleStr])
     where
         ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
 eatDefs (Branch bs) = Branch <$> mapM eatDefs bs

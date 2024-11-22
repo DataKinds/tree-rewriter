@@ -63,7 +63,7 @@ ensureTHCompilation = [
         [a|(hello :world)|],
         [a|(hello world! (true) reversethis (+4 +1  +2 +3 +5))|],
         [a|(hello world)|],
-        rbranch [sym "hello", sym "world!", rbranch [sym "true"], sym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
+        branch [sym "hello", sym "world!", branch [sym "true"], sym "reverse this", branch [num 4, num 1, num 2, num 3, num 5]]
     ]
 ```
 

@@ -4,21 +4,17 @@ import Text.Parsec
     ( char,
       satisfy,
       spaces,
-      string,
       choice,
       (<|>),
       many,
       many1,
       try,
-      unexpected,
       optionMaybe,
-      ParsecT, skipMany, oneOf, notFollowedBy, parserTraced, anyChar, manyTill, eof )
-import Runtime ( WithRuleset, sym, pstr, pnum, pbranch, pvar, addRule )
-import Core ( Tree, RValue, Rewrite (Rewrite) ) 
-import Data.Char ( isSpace, isDigit )
+      ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof )
+import Runtime ( sym, str, num, branch, pvar )
+import Core ( Tree, RValue ) 
+import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
-import Control.Monad (liftM, join)
-import Control.Monad.Trans.Class (lift)
 import Data.Functor.Identity (Identity)
 
 
@@ -48,7 +44,7 @@ pvarParser = char ':' *> (pvar <$> psymRawParser)
 pstrParser :: RuleParser (Tree RValue)
 pstrParser = do
     flex . char $ '"'
-    pstr <$> manyTill anyEscapedChar (try $ char '"')
+    str <$> manyTill anyEscapedChar (try $ char '"')
     where
         anyEscapedChar = (try $ char '\\' *> anyChar) <|> anyChar
 
@@ -56,7 +52,7 @@ pstrParser = do
 pregexParser :: RuleParser (Tree RValue)
 pregexParser = do
     flex . char $ '/'
-    pstr <$> manyTill anyEscapedChar (try $ char '/')
+    str <$> manyTill anyEscapedChar (try $ char '/')
     where
         anyEscapedChar = (try $ char '\\' *> anyChar) <|> anyChar
 
@@ -66,9 +62,9 @@ pnumParser = do
     sign <- optionMaybe $ char '+' <|> char '-'
     digits <- many1 (oneOf "0123456789")
     let reader = case sign of
-            Just '+' -> pnum . read
-            Just '-' -> pnum . negate . read
-            Nothing ->  pnum . read
+            Just '+' -> num . read
+            Just '-' -> num . negate . read
+            Nothing ->  num . read
     pure $ reader digits
 
 -- parses (1 2 (4 (5 6 7 (8))) :a 5 6)
@@ -77,7 +73,7 @@ pbranchParser = do
     _ <- flex . char $ '('
     lits <- many . flex $ literalParser
     _ <- char ')'
-    return $ pbranch lits
+    return $ branch lits
 
 -- parses [1 2 3 4 ::a]
 ptailListParser :: RuleParser (Tree RValue)
@@ -91,7 +87,7 @@ ptailListParser = try $ do
     _ <- char ']'
     return $ foldr cons tailLit lits
         where
-            cons x xs = pbranch [x, xs]
+            cons x xs = branch [x, xs]
 
 -- parses [1 2 (3) :a 4]
 plistParser :: RuleParser (Tree RValue)
@@ -99,9 +95,9 @@ plistParser = do
     _ <- flex . char $ '['
     lits <- many . flex $ literalParser
     _ <- char ']'
-    return $ foldr cons (pbranch []) lits
+    return $ foldr cons (branch []) lits
         where
-            cons x xs = pbranch [x, xs]
+            cons x xs = branch [x, xs]
 
 literalParser :: RuleParser (Tree RValue)
 literalParser = choice 
