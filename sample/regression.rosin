@@ -47,8 +47,8 @@
     We expect (defined "/^REGEX SAYS: Hello!$/ ~> \"Hello!\""))
 
 (Test a "Regex parse definition with groups"
-    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" ($0))
-    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" ($0)"))
+    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" (:$1))
+    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" (:$1)"))
 
 (Test a "Regex application"
     Given ("SIMON REGEX SAYS: Hello!" "REGEX SAYS: Hello!" "Unrelated string")
@@ -56,4 +56,4 @@
 
 (Test a "Regex group replacement"
     Given ("regex group test!")
-    We expect ("test regex group regex group test" ("regex group test")))
+    We expect ("test regex group regex group test!" ("regex")))

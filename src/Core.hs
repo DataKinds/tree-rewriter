@@ -9,21 +9,23 @@ import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 import Data.Functor ((<&>))
-import Data.Text.ICU (Regex, pattern, find)
+import qualified Data.Text.ICU as ICU
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.Bifunctor (first, Bifunctor (second))
 
-instance Eq Regex where
+instance Eq ICU.Regex where
     a == b = show a == show b
 
-instance Lift Regex where
+instance Lift ICU.Regex where
     liftTyped = undefined
 
 -- Runtime values, including pattern variables
-data RValue = RSymbol T.Text | RString T.Text | RRegex Regex | RNumber Integer | PVariable T.Text deriving (Lift, Eq)
+data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | PVariable T.Text deriving (Lift, Eq)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
-    show (RRegex t) = T.unpack . T.concat $ ["/", pattern t, "/"]
+    show (RRegex t) = T.unpack . T.concat $ ["/", ICU.pattern t, "/"]
     show (RNumber t) = '+':show t
     show (PVariable t) = ':':T.unpack t
 
@@ -54,6 +56,18 @@ rewriteTemplate (Rewrite _ templ) = templ
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
+
+-- takes a name and a runtime value tree, creates a new binding or appends to a binding list
+addBinding :: (Ord k) => k -> a -> State (M.Map k [a]) Bool
+addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
+-- takes a name and a runtime value, succeeds if the new binding equals the old one
+bindIfEqual :: (Ord k, Eq a) => k -> a -> State (M.Map k [a]) Bool
+bindIfEqual name binding = do
+    prevBinding <- gets (M.lookup name)
+    case prevBinding of
+        Just [] -> error "Unexpected empty binding"
+        Just (rval:_) -> pure $ binding == rval
+        Nothing -> modify (M.insert name [binding]) >> pure True
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
@@ -92,7 +106,7 @@ tryApply rules rval (Leaf (PVariable pvar))
                     Leaf r -> [Leaf r]
                     Branch rs -> rs
         -- sexpr to cons (unpack) eager accumulator 
-        "?!%" -> case rval of 
+        "?!%" -> case rval of
             Leaf _ -> pure False
             Branch rs -> if bfsPatterns rval rules then pure False else addBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs
         _ -> error . T.unpack $ T.append "Tried binding unknown special accumulator " pvar
@@ -100,23 +114,13 @@ tryApply rules rval (Leaf (PVariable pvar))
     | T.head pvar == '!' = if bfsPatterns rval rules then pure False else bindIfEqual (T.tail pvar) rval
     -- Bind regular pattern variable
     | otherwise = bindIfEqual pvar rval
-    where
-        -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
-        addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
-        -- takes a name and a runtime value, succeeds if the new binding equals the old one
-        bindIfEqual name binding = do
-            prevBinding <- gets (M.lookup name)
-            case prevBinding of 
-                Just [] -> error "Unexpected empty binding"
-                Just (rval:_) -> pure $ binding == rval
-                Nothing -> modify (M.insert name [binding]) >> pure True
 -- Match ntree branch patterns exactly
 tryApply _ (Branch []) (Branch []) = pure True
 tryApply _ (Branch []) _ = pure False
 tryApply rules (Branch rtrees) (Branch pvals)
     -- No point to checking patterns that match branches of the wrong length
     | length rtrees /= length pvals = pure False
-    | otherwise = and <$> zipWithM (tryApply rules) rtrees pvals 
+    | otherwise = and <$> zipWithM (tryApply rules) rtrees pvals
 -- Match symbol patterns
 tryApply _ (Leaf (RSymbol rsym)) (Leaf (RSymbol psym))
     | rsym == psym = pure True
@@ -129,12 +133,16 @@ tryApply _ (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
 tryApply _ (Leaf (RString rstr)) (Leaf (RString pstr))
     | rstr == pstr = pure True
     | otherwise = pure False
--- Match regex 
--- TODO: capture groups
-tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) = 
-    case find preg rstr of
+-- Match regex, setting variables corresponding to all captures
+tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) =
+    case ICU.find preg rstr of
         Nothing -> pure False
-        Just match -> pure True
+        Just match -> do
+            let count = ICU.groupCount match
+                captures = mapMaybe (\idx -> ICU.group idx match >>= (\m -> pure (idx, m))) [0..count]
+                namedCaptures = first (T.cons '$' . T.pack . show) <$> captures
+            mapM_ (\(name, capture) -> addBinding name (Leaf $ RString capture)) namedCaptures
+            pure True
 -- Catch failed matches
 tryApply _ _ _ = pure False
 
@@ -150,14 +158,14 @@ searchPatterns rval rr@(Rules rules) = let
     makeMatchAttempts = tryApply rr rval <$> patterns
     matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
     (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
-    in case possibleSuccess of 
+    in case possibleSuccess of
         (_, binding, templ):_ -> Just (binding, templ)
         [] -> Nothing
 
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible.
 -- Similar to `apply`, just with no rewriting happening. Used in eager matching
 bfsPatterns :: Tree RValue -> Rules -> Bool
-bfsPatterns rval rules = case searchPatterns rval rules of 
+bfsPatterns rval rules = case searchPatterns rval rules of
     Just _ -> True
     Nothing -> case rval of
         -- We failed to match a nub branch
@@ -170,7 +178,7 @@ bfsPatterns rval rules = case searchPatterns rval rules of
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
-apply rval rules = case searchPatterns rval rules of 
+apply rval rules = case searchPatterns rval rules of
     Just (binding, templ) -> do
         -- We found a match! Let's inject the variables
         treeLists <- mapM (betaReduce binding) templ
@@ -222,6 +230,12 @@ betaReduce bindings (Leaf (PVariable pvar))
     | otherwise = pure $ case bindings M.!? pvar of
         Just rvals -> reverse rvals
         Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
+-- Perform regex capture group substitutions!
+betaReduce bindings (Leaf (RString pstr)) = let
+    isRegexCaptureBinding name (Leaf (RString _):_) = T.head name == '$'
+    isRegexCaptureBinding _ _ = False
+    captureBindings = second (\((Leaf (RString capGroup)):_) -> capGroup) <$> M.toList (M.filterWithKey isRegexCaptureBinding bindings)
+    in pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr captureBindings
 betaReduce _ (Leaf pval) = pure [Leaf pval]
 
 
