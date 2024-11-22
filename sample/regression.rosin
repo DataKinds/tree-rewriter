@@ -21,8 +21,8 @@
     We expect ((defined "(hello :a) ~> (asdjklh :a)") (asdjklh world)))
 
 (Test a "Sum accumulator"
-    Given (((+ :?+ :?+ :?+) ~> :?+) (+ +69 +420 +-1337)) 
-    We expect ((defined "(+ :?+ :?+ :?+) ~> :?+") +-848))
+    Given (((+ :?+ :?+ :?+) ~> :?+) (+ +69 420 -1337)) 
+    We expect ((defined "(+ :?+ :?+ :?+) ~> :?+") -848))
 
 (Test a "Cons lists parse"
     Given ([this is a cons list]) 

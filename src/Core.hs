@@ -26,7 +26,7 @@ instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RRegex t) = T.unpack . T.concat $ ["/", ICU.pattern t, "/"]
-    show (RNumber t) = '+':show t
+    show (RNumber t) = show t
     show (PVariable t) = ':':T.unpack t
 
 data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable, Eq)
