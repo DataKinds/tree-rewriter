@@ -10,7 +10,7 @@ import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 import Data.Functor ((<&>))
 import qualified Data.Text.ICU as ICU
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, fromJust)
 import Data.Bifunctor (first, Bifunctor (second))
 
 instance Eq ICU.Regex where
@@ -139,10 +139,13 @@ tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) =
         Nothing -> pure False
         Just match -> do
             let count = ICU.groupCount match
+                preMatch = fromJust $ ICU.prefix 0 match
+                postMatch = fromJust $ ICU.suffix 0 match
                 captures = mapMaybe (\idx -> ICU.group idx match >>= (\m -> pure (idx, m))) [0..count]
                 namedCaptures = first (T.cons '$' . T.pack . show) <$> captures
             mapM_ (\(name, capture) -> addBinding name (Leaf $ RString capture)) namedCaptures
-            pure True
+            addBinding "$<" (Leaf $ RString preMatch)
+            addBinding "$>" (Leaf $ RString postMatch)
 -- Catch failed matches
 tryApply _ _ _ = pure False
 

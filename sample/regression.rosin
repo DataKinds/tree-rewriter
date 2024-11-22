@@ -42,18 +42,26 @@
         ()
         (rest (of (the (list ()))))))
 
-(Test a "Regex parse definition"
+(Test a "Regex definition with anchors"
     Given (/^REGEX SAYS: Hello!$/ ~> "Hello!")
     We expect (defined "/^REGEX SAYS: Hello!$/ ~> \"Hello!\""))
 
-(Test a "Regex parse definition with groups"
-    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" (:$1))
-    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" (:$1)"))
-
-(Test a "Regex application"
+(Test a "Regex apply"
     Given ("SIMON REGEX SAYS: Hello!" "REGEX SAYS: Hello!" "Unrelated string")
     We expect ("SIMON REGEX SAYS: Hello!" "Hello!" "Unrelated string"))
 
-(Test a "Regex group replacement"
+(Test a "Regex definition with groups"
+    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" (:$1))
+    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" (:$1)"))
+
+(Test a "Regex apply group replacement"
     Given ("regex group test!")
     We expect ("test regex group regex group test!" ("regex")))
+
+(Test a "Regex definition with offset"
+    Given ((/wow (floating) regex/ ~> "1234") "I can't believe it, wow floating regex is so cool!")
+    We expect ((defined "/wow (floating) regex/ ~> \"1234\"") "1234"))
+
+(Test a "Regex with offset, pre- and post-match groups"
+    Given ((/(floating) regex/ ~> "$> $1 $<") "this should match my floating regex!")
+    We expect ((defined "/(floating) regex/ ~> \"$> $1 $<\"") "! floating this should match my "))

@@ -169,3 +169,10 @@ We noted [above](INTRO.md#patterns-and-variables) that there was one more specia
 ==> ROSIN SAYS: (hello (world ()))
 ```
 
+## Regex
+
+Rosin supports regex now. More to come in this section...
+
+You can use `$0` in a string to interpolate the whole capture, or `:$0` outside a string to copy the capture to a new string term. Same with `$1` and `:$1` for the first capture group, etc, etc.
+
+You can also use `$<` and `$>` (likewise `:$<` and `:$>` outside of a string) to produce the part of the string that came before and after the regex match.

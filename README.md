@@ -40,6 +40,13 @@ will arrive and dispense one (1) sad platitude regarding your condition.
 
 Note that running it without arguments will cause Rosin to attempt to read from standard input.
 
+## Running the test suite
+
+Once installed, you may run the included regression tests using the makefile: 
+```
+make test
+```
+
 ## The Nitty Gritty
 
 ### Template Haskell
@@ -77,6 +84,8 @@ Inside of the S-expressions, there are a few datatypes that can occur as tree le
 | Number | `\+-?[0987654321.]+` | Bignum. Not stored as text.
 | Symbol | `[^[]():/ \t]+` | 
 | Pattern variable | `:[^[]():/ \t]+` | 
+| String | Anything between unescaped quotes | UTF-8 compatible
+| Regex | Anything between unescaped forward slashes | Matches via [ICU](https://unicode-org.github.io/icu/userguide/strings/regexp.html#regular-expression-metacharacters)
 
 ### Special accumulators
 
@@ -96,7 +105,7 @@ These special accumulators take some sort of action on the matched values. Some 
 ## Planned features
 * Allow all special accumulators to be used either eagerly (`!`) or non-eagerly.
 * Implement Input accumulator.
-* Parse strings and allow regex in pattern variables which match strings.
+* ~~Parse strings and allow regex in pattern variables which match strings.~~ Done!
 * Improved performance!
 
 ## Comparison with Modal/Thuesday
@@ -109,18 +118,15 @@ Rosin takes a large amount of inspiration from [Modal](https://wryl.tech/project
   * In theory, Rosin may be faster than Modal for small rewrites on very large data structures. The current Modal interpreter has a constant overhead of copying a size 0x4000 memory region on every rewrite, even when no rules apply (see https://git.sr.ht/~rabbits/modal/tree/master/item/src/modal.c). Rosin has a constant overhead of walking the entire input tree, but small rewrites will only swap pointers in the parsed tree (and eventually trigger a GC sweep) under Haskell's data model. No data copying required. I have not measured it, but I suspect two things to be true, making this currently a moot point: 
     1. Rosin's overall constant overhead per rewrite step is likely much higher thanks to Haskell's generally unperformant runtime & my overuse of singly-linked lists, and
     2. The size of input tree needed to outweigh that constant overhead is larger than the 0x4000-byte region that Modal allocates to work in.
-* Touch on numbered arguments to registers in Modal
-* Cons list syntax
-* No rule deletion in Rosin
-* Permacomputing + the intended target + Haskell's declaritivity lets me iterate faster
-* Eager variables + evaluation ordering
-
----
-
-tree rewriter is totally in progress. it is currently a tree rewriting language supporting syntactic sugar for cons lists, special named accumulators for executing side effects and doing arithmetic, and bigint support. it is currently declarative: a file is read for rewriting rules first, then passed back over to rewrite all the trees.
-
-it is planned to support regex matching rules on trees. it is also planned to allow live redefinition of rules (homoiconicity) a-la [modal](https://wiki.xxiivv.com/site/modal). in fact, this project's primary motivation is to be my test bed for what a slightly more feature-rich [modal](https://wiki.xxiivv.com/site/modal) could look like. 
-
-enter the main directory and run with `stack run sample/main.tree`. 
-
-the syntax is comprised of sexpr trees with special named terms. a term starting with `.` is an integer. a term starting with `:` is a rewrite pattern variable. a term starting with `:?` is a special accumulator. a cons list may have a final term starting with `..:` on the LHS of a rewrite term to match the tail of the list. 
+* Rosin does not currently allow rules to be destroyed after they're created. 
+  * Modal allows this through the `><` operation. 
+  * This will not always be the case -- rule destruction may be allowed in the future if I want the feature figure out a nice way to do it. Other than that,
+* Rosin includes a wider set of "batteries included" features, such as cons list syntax and regex matching.
+* Rosin uses [eager variables](./INTRO.md#eager-variables) to sequence computation. 
+  * Modal does not include any evaluation sequencing primitives -- instead, it is recommended to use a quasiquoting rule like `<> (quote ?x) (quote ?x)` which causes computation to jump back to the beginning.
+  * Rosin will always try to match closest to the top of the input data, so Rosin has "quasiquote" semantics by default. Forcing evaluation happens at the rule definition site instead of requiring the callee to explicitly quote or mark the data as eager.
+* The goal of Rosin differs from that of Modal. 
+  * Much of the work around Modal and successive languages (Nova, Mira) is centered around finding a new basis for computation. This basis must necessarily be very low-dependency and depend on very few primitives.
+  * There is a focus on permacomputing -- the development of systems more intuitive, universal, resillient, low-resource-usage, such that computing becomes natural and sustainable. 
+  * Rosin is at odds with this. It takes the intuitive model of computing developed above and tacks on all the nuts and bolts I can find. I aim to provide a maximalist rewriting environment that straddles the line of "simple, intuitive base" with a low-frustration programming experience. 
+  * Additionally, Haskell's rich repertoire of libraries and declaritivity lets me iterate on the language faster, despite being a possibly poor choice for a language runtime where speed is a concern.
