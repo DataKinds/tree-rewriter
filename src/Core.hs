@@ -4,16 +4,12 @@
 module Core where
 
 import qualified Data.Text as T
-import Data.Maybe
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, modify, runState, get, gets )
+import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
-import Data.Foldable (foldrM)
 import Data.Functor ((<&>))
-import Debug.Trace (trace)
-import Data.Bool (Bool(True))
 
 -- Runtime values, including pattern variables
 data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift, Eq, Ord)
@@ -122,10 +118,14 @@ tryApply _ (Leaf (RSymbol rsym)) (Leaf (RSymbol psym))
 tryApply _ (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
     | rnum == pnum = pure True
     | otherwise = pure False
--- Match string patterns (TODO: use regex)
+-- Match string patterns 
 tryApply _ (Leaf (RString rstr)) (Leaf (RString pstr))
     | rstr == pstr = pure True
     | otherwise = pure False
+-- Match regex TODO
+-- tryApply _ (Leaf (RString rstr)) (Leaf (RRegex pstr))
+--     | rstr == pstr = pure True
+--     | otherwise = pure False
 -- Catch failed matches
 tryApply _ _ _ = pure False
 

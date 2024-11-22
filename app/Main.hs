@@ -27,7 +27,7 @@ ensureTHCompilation = [
         [a|(hello :world)|],
         [a|(hello world! (true) reversethis (+4 +1  +2 +3 +5))|],
         [a|(hello world)|],
-        rbranch [rsym "hello", rsym "world!", rbranch [rsym "true"], rsym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
+        rbranch [sym "hello", sym "world!", rbranch [sym "true"], sym "reverse this", rbranch [rnum 4, rnum 1, rnum 2, rnum 3, rnum 5]]
     ]
 
 testTHCompilation :: IO ()

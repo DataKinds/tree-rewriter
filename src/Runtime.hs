@@ -12,8 +12,8 @@ import Data.Functor.Identity (Identity(Identity))
 
 -- Runtime value eDSL -- 
 -- Runtime leafs
-rsym :: String -> Tree RValue
-rsym = Leaf . RSymbol . T.pack
+sym :: String -> Tree RValue
+sym = Leaf . RSymbol . T.pack
 rstr :: String -> Tree RValue
 rstr = Leaf . RString . T.pack
 rnum :: Integer -> Tree RValue
@@ -22,7 +22,7 @@ rnum = Leaf . RNumber
 rbranch :: [Tree a] -> Tree a
 rbranch = Branch
 
-psym = rsym; pstr = rstr; pnum = rnum; pbranch = rbranch; 
+pstr = rstr; pnum = rnum; pbranch = rbranch; 
 
 -- Ruleset: Pattern and template building eDSL --
 type WithRuleset = Accum Rules
@@ -50,7 +50,7 @@ makeRules = flip execAccum mempty
 
 -- DFS a tree looking for definitions. Consume them and delete the tree branch containing the def.
 eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [rsym "defined", rstr ruleStr])
+eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (rbranch [sym "defined", rstr ruleStr])
     where
         ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
 eatDefs (Branch bs) = Branch <$> mapM eatDefs bs

@@ -8,7 +8,7 @@ import Text.Parsec
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import Control.Monad.Trans.Accum
-import Parser (RuleParser, flex, patternLiteralParser)
+import Parser (RuleParser, flex, literalParser)
 import Data.Functor.Identity ( Identity(runIdentity) )
 
 -- Quasiquote helpers --
@@ -24,7 +24,7 @@ quotePattern pat = let
         Left err -> error . show $ err
         Right q -> q
     where
-        parser2 = treeToQ $ try patternLiteralParser 
+        parser2 = treeToQ $ try literalParser 
         parser = spaces *> parser2
 
 -- pAttern (p was taken...)
