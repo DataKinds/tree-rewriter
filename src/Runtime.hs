@@ -7,6 +7,8 @@ import Debug.Trace
 import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
 import Data.Functor.Identity (Identity(Identity))
+import Data.Text.ICU (ParseError, regex')
+
 
 
 -- Runtime value eDSL -- 
@@ -17,6 +19,8 @@ str :: String -> Tree RValue
 str = Leaf . RString . T.pack
 num :: Integer -> Tree RValue
 num = Leaf . RNumber
+regex :: String -> Either ParseError (Tree RValue)
+regex s = regex' [] (T.pack s) >>= (pure . Leaf . RRegex)
 -- Pattern variables 
 pvar :: String -> Tree RValue
 pvar = Leaf . PVariable . T.pack

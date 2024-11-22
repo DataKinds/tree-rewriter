@@ -10,9 +10,9 @@ import Text.Parsec
       many1,
       try,
       optionMaybe,
-      ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof )
-import Runtime ( sym, str, num, branch, pvar )
-import Core ( Tree, RValue ) 
+      ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail )
+import Runtime ( sym, str, num, branch, pvar, regex )
+import Core ( Tree, RValue(..) ) 
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
 import Data.Functor.Identity (Identity)
@@ -52,9 +52,12 @@ pstrParser = do
 pregexParser :: RuleParser (Tree RValue)
 pregexParser = do
     flex . char $ '/'
-    str <$> manyTill anyEscapedChar (try $ char '/')
+    parsedRegex <- regex <$> manyTill anyEscapedChar (try $ char '/')
+    case parsedRegex of
+        Right compiledRegex -> pure compiledRegex
+        Left parserError -> parserFail (show parserError)
     where
-        anyEscapedChar = (try $ char '\\' *> anyChar) <|> anyChar
+        anyEscapedChar = try (char '\\' *> anyChar) <|> anyChar
 
 -- parses 10 or -45 or +222
 pnumParser :: RuleParser (Tree RValue)

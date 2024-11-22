@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE LambdaCase #-}
 module Core where
@@ -10,13 +9,21 @@ import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets )
 import Control.Monad (zipWithM)
 import Language.Haskell.TH.Syntax
 import Data.Functor ((<&>))
+import Data.Text.ICU (Regex, pattern, find)
+
+instance Eq Regex where
+    a == b = show a == show b
+
+instance Lift Regex where
+    liftTyped = undefined
 
 -- Runtime values, including pattern variables
-data RValue = RSymbol T.Text | RString T.Text | RNumber Integer | PVariable T.Text deriving (Lift, Eq, Ord)
+data RValue = RSymbol T.Text | RString T.Text | RRegex Regex | RNumber Integer | PVariable T.Text deriving (Lift, Eq)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
+    show (RRegex t) = T.unpack . T.concat $ ["/", pattern t, "/"]
     show (RNumber t) = '+':show t
     show (PVariable t) = ':':T.unpack t
 
@@ -122,10 +129,12 @@ tryApply _ (Leaf (RNumber rnum)) (Leaf (RNumber pnum))
 tryApply _ (Leaf (RString rstr)) (Leaf (RString pstr))
     | rstr == pstr = pure True
     | otherwise = pure False
--- Match regex TODO
--- tryApply _ (Leaf (RString rstr)) (Leaf (RRegex pstr))
---     | rstr == pstr = pure True
---     | otherwise = pure False
+-- Match regex 
+-- TODO: capture groups
+tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) = 
+    case find preg rstr of
+        Nothing -> pure False
+        Just match -> pure True
 -- Catch failed matches
 tryApply _ _ _ = pure False
 
@@ -180,6 +189,7 @@ apply rval rules = case searchPatterns rval rules of
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
 --            Variable name <-> value        
+-- TODO: we should pass this function regex group bindings too!
 betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> IO [Tree RValue]
 betaReduce bindings (Branch trees) = do
     treeLists <- mapM (betaReduce bindings) trees

@@ -12,6 +12,10 @@
     Given ((hello ~> world) hello) 
     We expect ((defined "hello ~> world") world))
 
+(Test a "Rule with many terms on LHS"
+    Given ((LHS.Test ~> Let's test the LHS) LHS.Test) 
+    We expect ((defined "LHS.Test ~> Let's test the LHS") Let's test the LHS))
+
 (Test a "Pattern variable"
     Given (((hello :a) ~> (asdjklh :a)) (hello world)) 
     We expect ((defined "(hello :a) ~> (asdjklh :a)") (asdjklh world)))
@@ -24,26 +28,32 @@
     Given ([this is a cons list]) 
     We expect ((this (is (a (cons (list ())))))))
 
-(Test a "Cons list tail variable"
+(Test a "Cons list tail variable definition"
+    Given ([cons tail ::tail] ~> :tail)
+    We expect (defined "(cons (tail :tail)) ~> :tail"))
+
+(Test a "Cons list tail variable application"
     Given 
-       (([cons tail ::tail] ~> :tail)
-        [cons head]
+       ([cons head]
         [cons tail]
         [cons tail rest of the list])
     We expect 
-       ((defined "(cons (tail :tail)) ~> :tail")
-        (cons (head ()))
+       ((cons (head ()))
         ()
         (rest (of (the (list ()))))))
 
-(Test a "Basic regex parse"
-    Given (
-        (/^REGEX SAYS: Hello!$/ ~> "Hello!")
-        "REGEX SAYS: Hello!"
-        "Unrelated string"
-    )
-    We expect (
-        (defined "/REGEX SAYS: Hello!/ ~> \"Hello!\"")
-        "Hello!"
-        "Unrelated string"
-    ))
+(Test a "Regex parse definition"
+    Given (/^REGEX SAYS: Hello!$/ ~> "Hello!")
+    We expect (defined "/^REGEX SAYS: Hello!$/ ~> \"Hello!\""))
+
+(Test a "Regex parse definition with groups"
+    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" ($0))
+    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" ($0)"))
+
+(Test a "Regex application"
+    Given ("SIMON REGEX SAYS: Hello!" "REGEX SAYS: Hello!" "Unrelated string")
+    We expect ("SIMON REGEX SAYS: Hello!" "Hello!" "Unrelated string"))
+
+(Test a "Regex group replacement"
+    Given ("regex group test!")
+    We expect ("test regex group regex group test" ("regex group test")))
