@@ -19,16 +19,58 @@ instance Eq ICU.Regex where
 instance Lift ICU.Regex where
     liftTyped = undefined
 
--- Runtime values, including pattern variables
-data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | PVariable T.Text deriving (Lift, Eq)
+------------------------------------------------------------
+-- Runtime values, including pattern variables and the tree
+------------------------------------------------------------
+
+-- Enum for special accumulators
+data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (Lift, Eq)
+instance Show SpecialAccumTag where
+    show SASum     = "+"
+    show SANegate  = "-"
+    show SAProduct = "*"
+    show SAOutput  = ">"
+    show SAInput   = "<"
+    show SAPack    = "@"
+    show SAUnpack  = "%"
+
+-- Pattern variable tags, holding the origin-type of the pattern variable and any special data it needs to operate
+data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (Lift, Eq)
+
+-- Pattern values. The PVar record holds values that need to be tracked for all pattern variables. 
+-- Currently this data includes 
+--    * its matching-strategy ("tag"),
+--    * its eagerness (can it match against a tree with other matching rules?),
+--    * and its name
+data PVar = PVar {
+    pvarEager :: Bool,
+    pvarTag :: PVarTag,
+    pvarName :: T.Text
+} deriving (Lift, Eq)
+
+-- Given a PVar, what sequence of sigils is it spelled with?
+pvarSigil :: PVar -> T.Text
+pvarSigil (PVar eager tag _) = T.pack $ go tag:eagerSigil
+    where
+        eagerSigil = if eager then "!" else ""
+        go PVarNothingSpecial = ':'
+        go (PVarSpecialAccum _) = '?'
+        go PVarRegexGroup = '$'
+
+instance Show PVar where
+    show pvar = T.unpack . T.concat $ [pvarSigil pvar, pvarName pvar]
+
+-- Runtime values. This is the structure that Rosin trees are parameterized over: the "leaf type".
+data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (Lift, Eq)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RRegex t) = T.unpack . T.concat $ ["/", ICU.pattern t, "/"]
     show (RNumber t) = show t
-    show (PVariable t) = ':':T.unpack t
+    show (RVariable t) = show t
 
+-- The tree!
 data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable, Eq)
 
 prettyprint :: Show a => Tree a -> String
@@ -57,6 +99,10 @@ rewriteTemplate (Rewrite _ templ) = templ
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
 
+data Binder = Binder {
+    binderTreeBindings :: M.Map T.Text [Tree RValue]
+}
+
 -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
 addBinding :: (Ord k) => k -> a -> State (M.Map k [a]) Bool
 addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
@@ -76,7 +122,7 @@ tryApply :: Rules                                   -- All the rewrite rules kno
          -> Tree RValue                             -- Pattern to match
          -> State (M.Map T.Text [Tree RValue]) Bool -- Updated variable bindings, along with whether the match succeeded
 -- Bind pattern variables and special accumulators
-tryApply rules rval (Leaf (PVariable pvar))
+tryApply rules rval (Leaf (RVariable pvar))
     -- Bind special accumulator
     | T.head pvar == '?' = case pvar of
         -- sum accumulator 
@@ -205,7 +251,7 @@ betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> IO [Tree RValue]
 betaReduce bindings (Branch trees) = do
     treeLists <- mapM (betaReduce bindings) trees
     pure [Branch $ concat treeLists]
-betaReduce bindings (Leaf (PVariable pvar))
+betaReduce bindings (Leaf (RVariable pvar))
     -- Handle special accumulators
     | T.head pvar == '?' =
         case pvar of

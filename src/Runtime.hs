@@ -23,7 +23,7 @@ regex :: String -> Either ParseError (Tree RValue)
 regex s = regex' [] (T.pack s) >>= (pure . Leaf . RRegex)
 -- Pattern variables 
 pvar :: String -> Tree RValue
-pvar = Leaf . PVariable . T.pack
+pvar = Leaf . RVariable . T.pack
 -- Runtime branch
 branch :: [Tree a] -> Tree a
 branch = Branch
