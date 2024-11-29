@@ -103,9 +103,17 @@ data Binder = Binder {
     binderTreeBindings :: M.Map T.Text [Tree RValue]
 }
 
+-- Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
+addTreeBinding :: (Ord k) => k -> a -> State Binder ()
+addTreeBinding name binding = void $ modify (M.alter go name)
+    where
+        go Nothing = Just [binding]
+        go (Just existingBindings) = Just binding:existingBindings
+
 -- takes a name and a runtime value tree, creates a new binding or appends to a binding list
 addBinding :: (Ord k) => k -> a -> State (M.Map k [a]) Bool
 addBinding name binding = modify (M.alter (pure . \case { Nothing -> [binding] ; (Just bindings) -> binding:bindings }) name) >> pure True
+
 -- takes a name and a runtime value, succeeds if the new binding equals the old one
 bindIfEqual :: (Ord k, Eq a) => k -> a -> State (M.Map k [a]) Bool
 bindIfEqual name binding = do
