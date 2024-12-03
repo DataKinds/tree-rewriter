@@ -309,7 +309,7 @@ betaReduce (Leaf (RVariable pvar)) = do
         -- Handle substitution on normal pattern variables
         else case pvarBinding of
             Just rvals -> pure $ reverse rvals
-            Nothing -> fail . T.unpack $ T.append "Missing binding for variable " (pvarName pvar)
+            Nothing -> fail $ "Missing binding for variable " ++ show pvar
     where
         goSpecialAccums :: Maybe [Tree RValue] -> IO [Tree RValue] 
         goSpecialAccums Nothing = pure [] -- unbound special accumulators produce nothing
