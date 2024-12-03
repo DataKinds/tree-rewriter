@@ -22,8 +22,8 @@ num = Leaf . RNumber
 regex :: String -> Either ParseError (Tree RValue)
 regex s = regex' [] (T.pack s) >>= (pure . Leaf . RRegex)
 -- Pattern variables 
-pvar :: String -> Tree RValue
-pvar = Leaf . RVariable . T.pack
+pvar :: PVar -> Tree RValue
+pvar = Leaf . RVariable 
 -- Runtime branch
 branch :: [Tree a] -> Tree a
 branch = Branch
@@ -62,6 +62,7 @@ liftIORuleset = mapAccumT (\(Identity a) -> pure a)
 
 -- Rewrite terms once, creating or modifying definitions as they arise
 -- Left if no rewrite rules applied, right if some did
+    -- TODO: set up a better monad with a multiset bag
 runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
 runStep [] = pure . Left $ []
 runStep trees = do 

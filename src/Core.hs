@@ -7,17 +7,19 @@ import Data.List ( intercalate )
 import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
 import Control.Monad (zipWithM)
-import Language.Haskell.TH.Syntax
+import qualified Language.Haskell.TH.Syntax as TH
 import Data.Functor ((<&>), void)
 import qualified Data.Text.ICU as ICU
 import Data.Maybe (catMaybes, mapMaybe, fromJust)
 import Data.Bifunctor (first, Bifunctor (second))
-import Control.Monad.Trans.State (get)
+import Control.Monad.Trans.State (get, StateT (..))
+import Control.Monad.Trans.State (put)
+import Control.Monad.Trans.Class (lift)
 
 instance Eq ICU.Regex where
     a == b = show a == show b
 
-instance Lift ICU.Regex where
+instance TH.Lift ICU.Regex where
     liftTyped = undefined
 
 ------------------------------------------------------------
@@ -25,7 +27,7 @@ instance Lift ICU.Regex where
 ------------------------------------------------------------
 
 -- Enum for special accumulators
-data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (Lift, Eq)
+data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (TH.Lift, Eq)
 instance Show SpecialAccumTag where
     show SASum     = "+"
     show SANegate  = "-"
@@ -36,7 +38,7 @@ instance Show SpecialAccumTag where
     show SAUnpack  = "%"
 
 -- Pattern variable tags, holding the origin-type of the pattern variable and any special data it needs to operate
-data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (Lift, Eq)
+data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (TH.Lift, Eq)
 
 -- Pattern values. The PVar record holds values that need to be tracked for all pattern variables. 
 -- Currently this data includes 
@@ -47,11 +49,13 @@ data PVar = PVar {
     pvarEager :: Bool,
     pvarTag :: PVarTag,
     pvarName :: T.Text
-} deriving (Lift, Eq)
+} deriving (TH.Lift, Eq)
 
 -- Decision functions for many characteristics of PVars
 pvarSpecialAccumAcceptor :: PVar -> Bool
 pvarSpecialAccumAcceptor = (\case { PVarSpecialAccum _ -> True ; _ -> False }) . pvarTag
+pvarRegexGroupAcceptor :: PVar -> Bool
+pvarRegexGroupAcceptor = (\case { PVarRegexGroup -> True ; _ -> False }) . pvarTag
 
 pvarSpecialAccumTag :: PVar -> Maybe SpecialAccumTag
 pvarSpecialAccumTag = (\case { PVarSpecialAccum saTag -> Just saTag ; _ -> Nothing }) . pvarTag
@@ -69,7 +73,7 @@ instance Show PVar where
     show pvar = T.unpack . T.concat $ [pvarSigil pvar, pvarName pvar]
 
 -- Runtime values. This is the structure that Rosin trees are parameterized over: the "leaf type".
-data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (Lift, Eq)
+data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (TH.Lift, Eq)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
@@ -79,7 +83,7 @@ instance Show RValue where
     show (RVariable t) = show t
 
 -- The tree!
-data Tree a = Branch [Tree a] | Leaf a deriving (Lift, Functor, Foldable, Traversable, Eq)
+data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq)
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
@@ -97,7 +101,7 @@ instance (Show a) => Show (Tree a) where
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
-data Rewrite a = Rewrite (Tree a) [Tree a] deriving (Lift)
+data Rewrite a = Rewrite (Tree a) [Tree a] deriving (TH.Lift)
 rewritePattern :: Rewrite a -> Tree a
 rewritePattern (Rewrite pat _) = pat
 rewriteTemplate :: Rewrite a -> [Tree a]
@@ -113,25 +117,37 @@ data Binder = Binder {
     binderTreeBindings :: M.Map T.Text [Tree RValue]
 }
 
+emptyBinder :: Binder
+emptyBinder = Binder {
+    binderTreeBindings = mempty
+}
+
 updateBinderTreeBindings :: (M.Map T.Text [Tree RValue] -> M.Map T.Text [Tree RValue]) -> Binder -> Binder
 updateBinderTreeBindings f b = b { binderTreeBindings = f (binderTreeBindings b) }
 
+-- What name do we use for PVars that go into the Binder?
+pvarBinderName :: PVar -> T.Text
+pvarBinderName pvar = T.cons (T.head $ pvarSigil pvar) (pvarName pvar)
+
 -- Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
 addTreeBinding :: Monad m => PVar -> Tree RValue -> StateT Binder m ()
-addTreeBinding pvar binding = void $ modify (updateBinderTreeBindings $ M.alter go (pvarName pvar))
+addTreeBinding pvar binding = void $ modify (updateBinderTreeBindings $ M.alter go (pvarBinderName pvar))
     where
         go Nothing = Just [binding]
         go (Just existingBindings) = Just $ binding:existingBindings
 
--- Bind a new or existing tree pattern variable. If the variable is already bound, succeed if the bindings are equal.
--- bindIfEqual :: (Ord k, Eq a) => k -> a -> State (M.Map k [a]) Bool
+-- Get the binding list for a tree pattern variable
+getTreeBinding :: Monad m => PVar -> StateT Binder m (Maybe [Tree RValue])
+getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
+
+-- Bind a new or existing tree pattern variable. Succeed if the binding completed, which requires equality with
+-- the existing binding.
 bindIfEqual :: Monad m => PVar -> Tree RValue -> StateT Binder m Bool
 bindIfEqual pvar binding = do
-    prevBinding <- gets (M.lookup (pvarName pvar) . binderTreeBindings)
+    prevBinding <- gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
     case prevBinding of
-        Just [] -> error "Unexpected empty binding"
         Just (rval:_) -> pure $ binding == rval
-        Nothing -> modify (updateBinderTreeBindings $ M.insert (pvarName pvar) [binding]) >> pure True
+        _ -> addTreeBinding pvar binding >> pure True
 
 -- Flatten a bunch of RValue trees into one Tree Branch in DFS order
 deepFlatten :: [Tree a] -> Tree a
@@ -235,22 +251,22 @@ fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
 -- Check the tip of the input tree, attempting to apply all rewrite rules at the tip
--- On a successful rule match, give back the pattern variable bindings and the template
-searchPatterns :: Tree RValue -> Rules -> Maybe (M.Map T.Text [Tree RValue], [Tree RValue])
+-- On a successful rule match, the state holds the pattern variable bindings and we give back the template
+searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe [Tree RValue]
 searchPatterns rval rr@(Rules rules) = let
     patterns = rewritePattern <$> rules
     templates = rewriteTemplate <$> rules
     makeMatchAttempts = tryApply rr rval <$> patterns
-    matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState mempty <$> makeMatchAttempts) templates
+    matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState emptyBinder <$> makeMatchAttempts) templates
     (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
     in case possibleSuccess of
-        (_, binding, templ):_ -> Just (binding, templ)
-        [] -> Nothing
+        (_, binding, templ):_ -> put binding >> pure templ
+        [] -> lift Nothing
 
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible.
 -- Similar to `apply`, just with no rewriting happening. Used in eager matching
 bfsPatterns :: Tree RValue -> Rules -> Bool
-bfsPatterns rval rules = case searchPatterns rval rules of
+bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
     Just _ -> True
     Nothing -> case rval of
         -- We failed to match a nub branch
@@ -263,10 +279,10 @@ bfsPatterns rval rules = case searchPatterns rval rules of
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
-apply rval rules = case searchPatterns rval rules of
-    Just (binding, templ) -> do
+apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
+    Just (template, binder) -> do
         -- We found a match! Let's inject the variables
-        treeLists <- mapM (betaReduce binding) templ
+        (treeLists, _) <- runStateT (mapM betaReduce template) binder
         pure (concat treeLists, 1)
     Nothing -> case rval of
         -- If we failed to match a nub branch, we give it back unchanged
@@ -281,47 +297,42 @@ apply rval rules = case searchPatterns rval rules of
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
---            Variable name <-> value        
--- TODO: we should pass this function regex group bindings too!
-betaReduce :: M.Map T.Text [Tree RValue] -> Tree RValue -> IO [Tree RValue]
-betaReduce bindings (Branch trees) = do
-    treeLists <- mapM (betaReduce bindings) trees
+betaReduce :: Tree RValue -> StateT Binder IO [Tree RValue]
+betaReduce (Branch trees) = do
+    treeLists <- mapM betaReduce trees
     pure [Branch $ concat treeLists]
-betaReduce bindings (Leaf (RVariable pvar))
+betaReduce (Leaf (RVariable pvar)) = do 
+    pvarBinding <- getTreeBinding pvar
     -- Handle special accumulators
-    | T.head pvar == '?' =
-        case pvar of
+    if pvarSpecialAccumAcceptor pvar
+        then lift $ goSpecialAccums pvarBinding
+        -- Handle substitution on normal pattern variables
+        else case pvarBinding of
+            Just rvals -> pure $ reverse rvals
+            Nothing -> fail . T.unpack $ T.append "Missing binding for variable " (pvarName pvar)
+    where
+        goSpecialAccums :: Maybe [Tree RValue] -> IO [Tree RValue] 
+        goSpecialAccums Nothing = pure [] -- unbound special accumulators produce nothing
+        goSpecialAccums (Just rvals) = case fromJust $ pvarSpecialAccumTag pvar of
             -- sum accumulator 
-            "?+" -> pure $ case bindings M.!? pvar of
-                Just rvals -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
-                Nothing -> []
+            SASum -> pure [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
             -- product accumulator 
-            "?*" -> pure $ case bindings M.!? pvar of
-                Just rvals -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
-                Nothing -> []
+            SAProduct -> pure [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
             -- negation accumulator 
-            "?-" -> pure $ case bindings M.!? pvar of
-                Just rvals -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
-                Nothing -> []
+            SANegate -> pure $ (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
             -- output accumulator
-            "?>" -> case bindings M.!? pvar of
-                Just rvals -> (putStrLn . unwords . reverse $ sexprprint <$> rvals) >> pure rvals
-                Nothing -> pure []
-            -- handle all other accumulators as normal vars -- their behavior happens at matchtime 
-            _ -> pure $ case bindings M.!? pvar of
-                Just rvals -> reverse rvals
-                Nothing -> error . T.unpack $ T.append "Missing binding for special accumulator " pvar
-    -- Substitute pattern variable normally
-    | otherwise = pure $ case bindings M.!? pvar of
-        Just rvals -> reverse rvals
-        Nothing -> error . T.unpack $ T.append "Missing binding for variable " pvar
+            SAOutput -> (putStrLn . unwords . reverse $ sexprprint <$> rvals) >> pure rvals
+            SAInput -> undefined -- TODO
+            -- other accumulators (SAPack, SAUnpack) bind like normal variables
+            _ -> pure $ reverse rvals
 -- Perform regex capture group substitutions!
-betaReduce bindings (Leaf (RString pstr)) = let
-    isRegexCaptureBinding name (Leaf (RString _):_) = T.head name == '$'
-    isRegexCaptureBinding _ _ = False
-    captureBindings = second (\((Leaf (RString capGroup)):_) -> capGroup) <$> M.toList (M.filterWithKey isRegexCaptureBinding bindings)
-    in pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr captureBindings
-betaReduce _ (Leaf pval) = pure [Leaf pval]
+betaReduce (Leaf (RString pstr)) = do
+    let isRegexBinding name (Leaf (RString _):_) = (== '$') . T.head $ name
+        isRegexBinding _ _ = False
+        fromRStringBinding (Leaf (RString rstr):_) = rstr
+    regexBindings <- gets (map (second fromRStringBinding) . M.toList . M.filterWithKey isRegexBinding . binderTreeBindings)
+    pure . pure .Leaf . RString $ foldr (uncurry T.replace) pstr regexBindings
+betaReduce (Leaf pval) = pure [Leaf pval]
 
 
 -- Rule list used for execution
