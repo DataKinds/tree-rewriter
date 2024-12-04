@@ -37,7 +37,7 @@ The left side of the `~>` in a rule is a *pattern*. Barring all else, Rosin will
 ==> ROSIN SAYS: (my totally awesome rule)
 ```
 
-There is one other special type of pattern variable that we'll talk about in the later discussion on cons lists.
+There are a few fun types of pattern variables that we'll talk about in the later discussion on cons lists and regexes.
 
 Sometimes, you may want Rosin to preferentially apply one rule instead of another rule, even if both patterns match. There are a few ways to do this. The first one is by presenting the rules in order. All else equal, Rosin will always prefer to match the first rule they saw:
 
@@ -119,10 +119,10 @@ In this way, Rosin is able to force something that resembles eager evaluation us
 In the previous section, we presented Rosin with a rule that looks like this:
 
 ```
-((puts :?>) ~> :?>)
+((puts ?>) ~> ?>)
 ```
 
-This rule uses a *special accumulator* spelled `:?>` in which tells Rosin to write to the standard output. 
+This rule uses a *special accumulator* spelled `?>` in which tells Rosin to write to the standard output. 
 
 All special accumulators will match against certain terms, potentially appearing multiple times on the LHS. The *output* accumulator used above matches against any term, and it asks Rosin to write a visual representation of the matches to standard out.
 
@@ -132,18 +132,18 @@ This works how you would expect:
 ==> ROSIN PRESENTS "hello" TO STANDARD OUT
 ```
 
-Special accumulators can be matched multiple times on the LHS. This allows multiple values to be passed to a particular accumulator. In the case of the output accumulator `:?>`, these values are written to standard out in sequence.
+Special accumulators can be matched multiple times on the LHS. This allows multiple values to be passed to a particular accumulator. In the case of the output accumulator `?>`, these values are written to standard out in sequence.
 
 ```
-((puts :?> :?>) ~> :?>)
+((puts ?> ?>) ~> ?>)
 (puts hello (world))
 ==> ROSIN PRESENTS "hello (world)" TO STANDARD OUT
 ```
 
-Other special accumulators may have useful behavior when matched multiple times. For example, take the sum accumulator `:?+`. It only matches individual numbers (a plus sign followed by digits, see [Bare term datatypes](README.md#bare-term-datatypes)). When it matches multiple, Rosin adds them up and lets the result be filled in on the right hand side.
+Other special accumulators may have useful behavior when matched multiple times. For example, take the sum accumulator `?+`. It only matches individual numbers (a plus sign followed by digits, see [Bare term datatypes](README.md#bare-term-datatypes)). When it matches multiple, Rosin adds them up and lets the result be filled in on the right hand side.
 
 ```
-((:?+ plus :?+ plus :?+) ~> :?+)
+((?+ plus ?+ plus ?+) ~> ?+)
 (+5 plus +6 plus +7)
 ==> ROSIN SAYS: +18
 (+5 plus (+0 plus +1 plus +2) plus +7)
@@ -151,6 +151,8 @@ Other special accumulators may have useful behavior when matched multiple times.
 ```
 
 You may see [the full list of special accumulators in the README](README.md#special-accumulators).
+
+Special accumulators can also be made to match eagerly by spelling them with `?!` instead of just `?`.
 
 ## Cons Lists
 
@@ -173,6 +175,6 @@ We noted [above](INTRO.md#patterns-and-variables) that there was one more specia
 
 Rosin supports regex now. More to come in this section...
 
-You can use `$0` in a string to interpolate the whole capture, or `:$0` outside a string to copy the capture to a new string term. Same with `$1` and `:$1` for the first capture group, etc, etc.
+You can use `$0` in a string to interpolate the whole capture and use `$0` outside a string to copy the capture to a new string term. Same with `$1` for the first capture group, etc, etc.
 
-You can also use `$<` and `$>` (likewise `:$<` and `:$>` outside of a string) to produce the part of the string that came before and after the regex match.
+You can also use `$<` and `$>` to produce the part of the string that came before and after the regex match.

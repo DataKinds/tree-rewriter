@@ -89,24 +89,26 @@ Inside of the S-expressions, there are a few datatypes that can occur as tree le
 
 ### Special accumulators
 
-These special accumulators take some sort of action on the matched values. Some of them match eagerly, which is indicated by a bang `!`. All are prefaced with a colon `:` to indicate they match like pattern variables.
+These special accumulators take some sort of action on the matched values. You may place a bang `!` after the `?` sigil to make the special accumulator match eagerly. Some of these accumulators are much more useful when made eager, like Pack `?!@`.
 
 | Name | Spelling | Matches | Behavior |
 |------|----------|---------|----------|
-| Sum | `:?+` | Only numbers | Sums up all matched terms, produces one number | 
-| Negate | `:?-` | Only numbers | Negates (additive inverse) all matched terms, produces as many terms as matched | 
-| Product | `:?*` | Only numbers | Multiplies all matched terms,  produces one number | 
-| Output | `:?>` | Anything | Writes the matched term to standard out, produces it unchanged | 
-| Input | `:?<` | Anything | Still TODO | 
-| Pack | `:?!@` | Only branches | Converts a cons list to a S-expression. This accumulator matches eagerly, so all computation must be completed before packing. | 
-| Unpack | `:?!%` | Only branches | Converts an S-expression to a cons list. This accumulator matches eagerly, so all computation must be completed before unpacking. | 
+| Sum | `?+` | Only numbers | Sums up all matched terms, produces one number | 
+| Negate | `?-` | Only numbers | Negates (additive inverse) all matched terms, produces as many terms as matched | 
+| Product | `?*` | Only numbers | Multiplies all matched terms,  produces one number | 
+| Output | `?>` | Anything | Writes the matched term to standard out, produces it unchanged | 
+| Input | `?<` | Anything | Still TODO | 
+| Pack | `?@` | Only branches | Walks an S-expression in DFS order and flattens a nested structure. This converts a cons list to a S-expression. | 
+| Unpack | `?%` | Only branches | Converts an S-expression to a cons list. | 
 
 
 ## Planned features
-* Allow all special accumulators to be used either eagerly (`!`) or non-eagerly.
-* Implement Input accumulator.
-* ~~Parse strings and allow regex in pattern variables which match strings.~~ Done!
-* Improved performance!
+* [x] ~~Allow all special accumulators to be used either eagerly (`!`) or non-eagerly.~~ Done!
+* [ ] Implement Input accumulator.
+* [ ] Support capture groups from multiple regex matches in one rule.
+* [ ] Support multiset state on the rewrite head.
+* [x] ~~Parse strings and allow regex in pattern variables which match strings.~~ Done!
+* [ ] Improved performance!
 
 ## Comparison with Modal/Thuesday
 
