@@ -1,4 +1,11 @@
-test:
-	stack run -- sample/regression.rosin -pv
+test: sample/regression/*.rosin
+	$(foreach testfile, $^, echo 'running $(testfile)'; stack run -- $(testfile) -p;)
 
-.PHONY: test
+build:
+	stack build 
+
+install:
+	stack install
+
+
+.PHONY: build install test
