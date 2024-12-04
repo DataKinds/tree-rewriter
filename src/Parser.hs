@@ -12,10 +12,12 @@ import Text.Parsec
       optionMaybe,
       ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail )
 import Runtime ( sym, str, num, branch, pvar, regex )
-import Core ( Tree, RValue(..) ) 
+import Core ( Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
 import Data.Functor.Identity (Identity)
+import Data.Maybe (isJust)
+import qualified Data.Text as T
 
 
 
@@ -37,8 +39,40 @@ psymRawParser = some psymCharParser
 psymParser :: RuleParser (Tree RValue)
 psymParser = sym <$> psymRawParser
 
+-- parses $!hello or :hello or ?+ or ?!@
 pvarParser :: RuleParser (Tree RValue)
-pvarParser = char ':' *> (pvar <$> psymRawParser)
+pvarParser = try specialAccum <|> normalVar 
+    where
+        mkAccumParser :: Char -> SpecialAccumTag -> RuleParser (SpecialAccumTag, Char)
+        mkAccumParser accumName accumTag = char accumName >> pure (accumTag, accumName)
+        specialAccum = do
+            _ <- char '?'
+            eager <- isJust <$> optionMaybe (char '!')
+            (accumTag, accumName) <- choice -- parse the accumulator
+                [ mkAccumParser '+' SASum
+                , mkAccumParser '-' SANegate
+                , mkAccumParser '*' SAProduct
+                , mkAccumParser '>' SAOutput 
+                , mkAccumParser '<' SAInput  
+                , mkAccumParser '@' SAPack   
+                , mkAccumParser '%' SAUnpack 
+                ]
+            pure . pvar $ PVar {
+                pvarEager = eager,
+                pvarName = T.singleton accumName,
+                pvarTag = PVarSpecialAccum accumTag
+            }
+        normalVar = do
+            sigilTag <- choice -- parse the sigil
+                [ char ':' >> pure PVarNothingSpecial
+                , char '$' >> pure PVarRegexGroup]
+            eager <- isJust <$> optionMaybe (char '!')
+            varBody <- psymRawParser
+            pure . pvar $ PVar{
+                pvarEager = eager,
+                pvarName = T.pack varBody,
+                pvarTag = sigilTag
+            }
 
 -- parses "hello world"
 pstrParser :: RuleParser (Tree RValue)

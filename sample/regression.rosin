@@ -21,8 +21,8 @@
     We expect ((defined "(hello :a) ~> (asdjklh :a)") (asdjklh world)))
 
 (Test a "Sum accumulator"
-    Given (((+ :?+ :?+ :?+) ~> :?+) (+ +69 420 -1337)) 
-    We expect ((defined "(+ :?+ :?+ :?+) ~> :?+") -848))
+    Given (((+ ?+ ?+ ?+) ~> ?+) (+ +69 420 -1337)) 
+    We expect ((defined "(+ ?+ ?+ ?+) ~> ?+") -848))
 
 (Test a "Cons lists parse"
     Given ([this is a cons list]) 
@@ -51,8 +51,8 @@
     We expect ("SIMON REGEX SAYS: Hello!" "Hello!" "Unrelated string"))
 
 (Test a "Regex definition with groups"
-    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" (:$1))
-    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" (:$1)"))
+    Given (/^(regex) (group) (test)!$/ ~> "$3 $1 $2 $0" ($1))
+    We expect (defined "/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" ($1)"))
 
 (Test a "Regex apply group replacement"
     Given ("regex group test!")
