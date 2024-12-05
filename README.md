@@ -107,6 +107,7 @@ These special accumulators take some sort of action on the matched values. You m
 * [ ] Implement Input accumulator.
 * [ ] Support capture groups from multiple regex matches in one rule.
 * [ ] Support multiset state on the rewrite head.
+* [ ] Implement a few builtin rules, like `@include` for files.
 * [x] ~~Parse strings and allow regex in pattern variables which match strings.~~ Done!
 * [ ] Improved performance!
 

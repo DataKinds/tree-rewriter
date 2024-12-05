@@ -164,7 +164,6 @@ addRegexBinding groupname matchtext = modify (updateBinderRegexBindings $ M.inse
 getRegexBinding :: Monad m => PVar -> StateT Binder m (Maybe T.Text)
 getRegexBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderRegexBindings)
 
-
 -- Get the correct binding for a PVar. Some PVars may be stored differently in the Binder depending on their tag.
 getBinding :: Monad m => PVar -> StateT Binder m (Maybe [Tree RValue])
 getBinding pvar = case pvarTag pvar of
@@ -172,6 +171,9 @@ getBinding pvar = case pvarTag pvar of
         binding <- getRegexBinding pvar 
         pure (pure . Leaf . RString <$> binding)
     _ -> getTreeBinding pvar
+
+
+
 
 -- Flatten a bunch of RValue trees into one Tree Branch in DFS order
 deepFlatten :: [Tree a] -> Tree a
@@ -343,7 +345,7 @@ betaReduce (Leaf (RVariable pvar)) = do
             -- product accumulator 
             SAProduct -> pure [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
             -- negation accumulator 
-            SANegate -> pure $ (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> rvals
+            SANegate -> pure $ (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
             -- output accumulator
             SAOutput -> (putStrLn . unwords . reverse $ sexprprint <$> rvals) >> pure rvals
             SAInput -> undefined -- TODO

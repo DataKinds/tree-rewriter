@@ -1,7 +1,68 @@
-((t :desc :!val :val) ~> (✅ :desc :val))
-((t :desc :!got :wanted) ~> (❌ :desc got :got wanted :wanted))
+((p ?>) ~> ?>)
+((t :desc :!val :val) ~> (p (✅ :desc :val)))
+((t :desc :!got :wanted) ~> (p (❌ :desc got :got wanted :wanted)))
 ((Test a :desc Given :test We expect :val) ~> (t :desc :test :val))
 
 (Test a "Sum accumulator"
     Given (((+ ?+ ?+ ?+) ~> ?+) (+ +69 420 -1337)) 
     We expect ((defined "(+ ?+ ?+ ?+) ~> ?+") -848))
+
+(Test a "Negate accumulator defs"
+    Given 
+       (((- ?-) ~> ?-) 
+        ((- ?- ?-) ~> ?-) 
+        ((- ?- ?- ?-) ~> ?-))
+    We expect 
+      ((defined "(- ?-) ~> ?-")
+       (defined "(- ?- ?-) ~> ?-") 
+       (defined "(- ?- ?- ?-) ~> ?-")))
+
+(Test a "Negate accumulator"
+    Given ((- 69) (- 69 420) (- 69 420 1337)) 
+    We expect (-69 -69 -420 -69 -420 -1337))
+
+(Test a "Product accumulator"
+    Given (((* ?* ?* ?*) ~> ?*) (* 69 420 -1337)) 
+    We expect ((defined "(* ?* ?* ?*) ~> ?*") -38746260))
+
+(Test a "Output accumulator"
+    Given (((> ?>) ~> ?>) (> (hello world))) 
+    We expect ((defined "(> ?>) ~> ?>") (hello world)))
+
+(Test a "Eager output accumulator"
+    Given 
+       (((>! ?!>) ~> ?>) 
+        ((interrupting cow) ~> moo)
+        (>! (interrupting cow))) 
+    We expect 
+       ((defined "(>! ?!>) ~> ?>") 
+        (defined "(interrupting cow) ~> moo")
+        moo))
+
+(Test a "Pack accumulator"
+    Given 
+       (((@ ?@) ~> ?@)
+        (@ (hello world))
+        (@ [this is a cons list]))
+    We expect 
+       ((defined "(@ ?@) ~> ?@") 
+        (hello world)
+        (this is a cons list)))
+
+(Test a "Pack strangely" 
+    Given (@ (this (is a (strangely) nested) list))
+    We expect (this is a strangely nested list))
+
+(Test a "Unpack accumulator"
+    Given 
+       (((% ?%) ~> ?%)
+        (% (hello world))
+        (% (this is a cons list)))
+    We expect 
+       ((defined "(% ?%) ~> ?%") 
+        [hello world]
+        [this is a cons list]))
+
+(Test a "Unpack strangely" 
+    Given (% (this (is a (strangely) nested) list))
+    We expect (this is a strangely nested list))

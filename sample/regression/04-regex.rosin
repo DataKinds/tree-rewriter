@@ -1,5 +1,6 @@
-((t :desc :!val :val) ~> (✅ :desc :val))
-((t :desc :!got :wanted) ~> (❌ :desc got :got wanted :wanted))
+((p ?>) ~> ?>)
+((t :desc :!val :val) ~> (p (✅ :desc :val)))
+((t :desc :!got :wanted) ~> (p (❌ :desc got :got wanted :wanted)))
 ((Test a :desc Given :test We expect :val) ~> (t :desc :test :val))
 
 (Test a "Regex definition with anchors"
