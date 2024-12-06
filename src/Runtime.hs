@@ -116,8 +116,9 @@ runStep = do
     downLook <- gets (Z.firstChild . runtimeZipper)
     rightLook <- gets (Z.right . runtimeZipper)
     -- TODO: if rightLook fails, we need to go up + right. if thatfails we need to go up + up + right. if that fails... 
-    startLook <- gets (Z.upmost . runtimeZipper)
-    let newZipper = head (catMaybes [downLook, rightLook, Just startLook])
+    -- See Z.keepTryingUntil
+    uncleLook <- gets (Z.keepTryingUntil Z.up Z.right . runtimeZipper)
+    let newZipper = head (catMaybes [downLook, rightLook, Just uncleLook])
     modifyRuntimeZipper (const newZipper)
     -- Give back the value we use to assess termination
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)

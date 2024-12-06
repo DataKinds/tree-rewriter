@@ -41,6 +41,9 @@ most f = go
 tug :: (a -> Maybe a) -> a -> a
 tug f x = fromMaybe x (f x)
 
+keepTryingUntil :: (a -> Maybe a) -> (a -> Maybe a) -> a -> a
+keepTryingUntil tryThis untilThisSucceeds onThis = undefined 
+
 firstChild :: Zipper a -> Maybe (Zipper a)
 firstChild z = case _Content z of 
     Leaf _ -> Nothing

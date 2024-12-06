@@ -355,6 +355,7 @@ betaReduce (Leaf pval) = pure [Leaf pval]
 
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
 -- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
+-- TODO: THIS NEEDS TO NOT BFS ANYMORE!!
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Int)
 apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
     Just (template, binder) -> do
