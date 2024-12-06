@@ -98,24 +98,6 @@ eatDef = do
 
 -- Execute a Rosin runtime --
 
--- Rewrite terms once, creating or modifying definitions as they arise
--- Left if no rewrite rules applied, right if some did
-    -- TODO: set up a better monad with a multiset bag
--- runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
--- runStep [] = pure . Left $ []
--- runStep trees = do 
---     -- detect definitions
---     noDefsTrees <- liftIORuleset $ mapM eatDefs trees
---     rules <- look
---     -- apply rewrites
---     let _lrTrees = flip applyRewrites rules <$> noDefsTrees 
---     lrTrees <- lift $ sequence _lrTrees
---     case rights lrTrees of
---         -- no rewrites happened
---         []  -> pure . Left $ noDefsTrees
---         -- rewrites happened! be careful to not force their values here
---         _ -> pure . Right $ concatMap (either id id) lrTrees
-
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head
