@@ -1,6 +1,7 @@
 module Runtime where
     
 import Core
+import Zipper
 import Control.Monad.Trans.Accum
 import qualified Data.Text as T
 import Debug.Trace
@@ -8,7 +9,7 @@ import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
 import Data.Functor.Identity (Identity(Identity))
 import Data.Text.ICU (ParseError, regex')
-
+import Control.Monad.Trans.State (StateT)
 
 
 -- Runtime value eDSL -- 
@@ -29,9 +30,16 @@ branch :: [Tree a] -> Tree a
 branch = Branch
 
 -- Ruleset: Pattern and template building eDSL --
-type WithRuleset = Accum Rules
-type WithIORuleset = AccumT Rules IO
-type Ruleset = WithRuleset ()
+-- type WithRuleset = Accum Rules
+-- type WithIORuleset = AccumT Rules IO
+-- type Ruleset = WithRuleset ()
+data Runtime = Runtime {
+    runtimeRules :: Rules,
+    runtimeSingleUseRules :: Rules,
+    runtimeZipper :: Zipper RValue
+}
+type RuntimeT m = StateT Runtime m ()
+
 
 -- Rewriting rule
 addRule :: Rewrite RValue -> Ruleset

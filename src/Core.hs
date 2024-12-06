@@ -101,11 +101,10 @@ instance (Show a) => Show (Tree a) where
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
-data Rewrite a = Rewrite (Tree a) [Tree a] deriving (TH.Lift)
-rewritePattern :: Rewrite a -> Tree a
-rewritePattern (Rewrite pat _) = pat
-rewriteTemplate :: Rewrite a -> [Tree a]
-rewriteTemplate (Rewrite _ templ) = templ
+data Rewrite a = Rewrite {
+    rewritePattern :: Tree a,
+    rewriteTemplate :: [Tree a]
+} deriving (TH.Lift)
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
@@ -371,20 +370,20 @@ instance Show Rules where
         ["+---------------+"],
         show <$> rewrites]
 
-instance Semigroup Rules where
-    -- TODO: make this more efficient
-    Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
+-- instance Semigroup Rules where
+--     -- TODO: make this more efficient
+--     Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
 
-instance Monoid Rules where
-    mempty = Rules []
+-- instance Monoid Rules where
+--     mempty = Rules []
 
 
 -- Left if no rewrites applied
 -- Right the new runtime values if a rewrite applied
-applyRewrites :: Tree RValue -> Rules -> IO (Either [Tree RValue] [Tree RValue])
-applyRewrites rval rules = maybe (Left [rval]) Right <$> _applyRewrites rval rules
+-- applyRewrites :: Tree RValue -> Rules -> IO (Either [Tree RValue] [Tree RValue])
+-- applyRewrites rval rules = maybe (Left [rval]) Right <$> _applyRewrites rval rules
 
-_applyRewrites :: Tree RValue -> Rules -> IO (Maybe [Tree RValue])
-_applyRewrites rval rules = apply rval rules <&> (\case
-            (_, 0) -> Nothing
-            (rvals', _) -> Just rvals')
+-- _applyRewrites :: Tree RValue -> Rules -> IO (Maybe [Tree RValue])
+-- _applyRewrites rval rules = apply rval rules <&> (\case
+--             (_, 0) -> Nothing
+--             (rvals', _) -> Just rvals')
