@@ -102,7 +102,9 @@ instance (Show a) => Show (Tree a) where
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
 data Rewrite a = Rewrite {
+    -- The pattern to match in the data tree
     rewritePattern :: Tree a,
+    -- The template to replace the matched pattern with
     rewriteTemplate :: [Tree a]
 } deriving (TH.Lift)
 
@@ -189,6 +191,19 @@ makeRegexPVar name = PVar {
     pvarTag = PVarRegexGroup,
     pvarName = name
 }
+
+-- List of rules for mutating the data tree
+newtype Rules = Rules {
+    unrules :: [Rewrite RValue]
+}
+
+instance Show Rules where
+    show (Rules rewrites) = unlines . concat $ [
+        ["+---------------+"],
+        ["| Rewrite rules |"],
+        ["+---------------+"],
+        show <$> rewrites]
+
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
@@ -301,25 +316,6 @@ bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder 
         -- We failed to match an inhabited branch, let's BFS
         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
--- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
--- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
-apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
-    Just (template, binder) -> do
-        -- We found a match! Let's inject the variables
-        (treeLists, _) <- runStateT (mapM betaReduce template) binder
-        pure (concat treeLists, 1)
-    Nothing -> case rval of
-        -- If we failed to match a nub branch, we give it back unchanged
-        Branch [] -> pure ([rval], 0)
-        -- If we failed to match an inhabited branch, let's match the branch's children
-        Branch rtrees -> do
-            treeList <- mapM (`apply` rules) rtrees
-            let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
-            pure ([Branch . concat $ rtrees'], count)
-        -- If we failed to match a single runtime value, we give it back unchanged
-        Leaf _ -> pure ([rval], 0)
-
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 -- TODO: this function can bottom, let's return errors with a proper monad!
 betaReduce :: Tree RValue -> StateT Binder IO [Tree RValue]
@@ -357,18 +353,25 @@ betaReduce (Leaf (RString pstr)) = do
 betaReduce (Leaf pval) = pure [Leaf pval]
 
 
--- Rule list used for execution
-newtype Rules = Rules [Rewrite RValue]
+-- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
+-- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
+apply :: Tree RValue -> Rules -> IO ([Tree RValue], Int)
+apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
+    Just (template, binder) -> do
+        -- We found a match! Let's inject the variables
+        (treeLists, _) <- runStateT (mapM betaReduce template) binder
+        pure (concat treeLists, 1)
+    Nothing -> case rval of
+        -- If we failed to match a nub branch, we give it back unchanged
+        Branch [] -> pure ([rval], 0)
+        -- If we failed to match an inhabited branch, let's match the branch's children
+        Branch rtrees -> do
+            treeList <- mapM (`apply` rules) rtrees
+            let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
+            pure ([Branch . concat $ rtrees'], count)
+        -- If we failed to match a single runtime value, we give it back unchanged
+        Leaf _ -> pure ([rval], 0)
 
-unrules :: Rules -> [Rewrite RValue]
-unrules (Rules rewrites) = rewrites
-
-instance Show Rules where
-    show (Rules rewrites) = unlines . concat $ [
-        ["+---------------+"],
-        ["| Rewrite rules |"],
-        ["+---------------+"],
-        show <$> rewrites]
 
 -- instance Semigroup Rules where
 --     -- TODO: make this more efficient
