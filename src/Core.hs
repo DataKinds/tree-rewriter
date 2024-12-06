@@ -372,22 +372,3 @@ apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
             pure ([Branch . concat $ rtrees'], count)
         -- If we failed to match a single runtime value, we give it back unchanged
         Leaf _ -> pure ([rval], 0)
-
-
--- instance Semigroup Rules where
---     -- TODO: make this more efficient
---     Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
-
--- instance Monoid Rules where
---     mempty = Rules []
-
-
--- Left if no rewrites applied
--- Right the new runtime values if a rewrite applied
--- applyRewrites :: Tree RValue -> Rules -> IO (Either [Tree RValue] [Tree RValue])
--- applyRewrites rval rules = maybe (Left [rval]) Right <$> _applyRewrites rval rules
-
--- _applyRewrites :: Tree RValue -> Rules -> IO (Maybe [Tree RValue])
--- _applyRewrites rval rules = apply rval rules <&> (\case
---             (_, 0) -> Nothing
---             (rvals', _) -> Just rvals')
