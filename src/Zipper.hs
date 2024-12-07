@@ -7,7 +7,7 @@ data Zipper a = Zipper {
     _Right :: [Tree a],
     _Ups :: [([Tree a], [Tree a])],
     _Content :: Tree a
-}
+} deriving (Show)
 
 look :: Zipper a -> Tree a
 look = _Content
@@ -88,7 +88,7 @@ up z = case _Ups $ leftmost z of
         _Left = leftPath,
         _Right = rightPath,
         _Ups = rest,
-        _Content = Branch $ _Right z
+        _Content = Branch $ _Content z:_Right z
     }
 upmost :: Zipper a -> Zipper a
 upmost = most up

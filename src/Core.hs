@@ -317,7 +317,6 @@ bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder 
         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
--- TODO: this function can bottom, let's return errors with a proper monad!
 betaReduce :: Tree RValue -> StateT Binder IO [Tree RValue]
 betaReduce (Branch trees) = do
     treeLists <- mapM betaReduce trees
@@ -353,22 +352,11 @@ betaReduce (Leaf (RString pstr)) = do
 betaReduce (Leaf pval) = pure [Leaf pval]
 
 
--- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
--- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
--- TODO: THIS NEEDS TO NOT BFS ANYMORE!!
+-- Try applying all rewrite rules at the tip of the tree.
+-- Evaluates to the new trees and the number of rewrite rules applied in this step 
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Int)
 apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
-    Just (template, binder) -> do
-        -- We found a match! Let's inject the variables
+    Just (template, binder) -> do -- We found a match! Let's inject the variables
         (treeLists, _) <- runStateT (mapM betaReduce template) binder
         pure (concat treeLists, 1)
-    Nothing -> case rval of
-        -- If we failed to match a nub branch, we give it back unchanged
-        Branch [] -> pure ([rval], 0)
-        -- If we failed to match an inhabited branch, let's match the branch's children
-        Branch rtrees -> do
-            treeList <- mapM (`apply` rules) rtrees
-            let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
-            pure ([Branch . concat $ rtrees'], count)
-        -- If we failed to match a single runtime value, we give it back unchanged
-        Leaf _ -> pure ([rval], 0)
+    Nothing -> pure ([rval], 0) -- We failed to find a match, let's give our input back unchanged
