@@ -11,7 +11,7 @@ import Data.Functor.Identity (Identity(Identity))
 import Data.Text.ICU (ParseError, regex')
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, put, execStateT)
 import Data.Maybe (catMaybes)
-import Control.Monad (guard, unless)
+import Control.Monad (guard, unless, when)
 
 
 -- Runtime value eDSL -- 
@@ -33,13 +33,15 @@ branch = Branch
 
 -- Runtime handles the state of the rewrite head processing the input data 
 data Runtime = Runtime {
+    -- Do we print out debug information?
+    runtimeVerbose :: Bool,
     -- What tree rewriting rules are active?
     runtimeRules :: Rules,
     -- What tree rewriting lambdas are active?
     runtimeSingleUseRules :: Rules,
     -- Where are we in the data tree?
     runtimeZipper :: Z.Zipper RValue
-}
+} deriving (Show)
 type RuntimeTV m v = StateT Runtime m v
 type RuntimeT m = RuntimeTV m ()
 
@@ -105,19 +107,18 @@ eatDef = do
 -- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). There should never be more than 1 rule applied per step.
 runStep :: RuntimeTV IO (Int, Bool)
 runStep = do
+    verbose <- gets runtimeVerbose
     -- Begin 1
     eatDef 
     -- Begin 2
     rules <- gets runtimeRules 
     subject <- gets (Z.look . runtimeZipper)
     (rewritten, rewriteCount) <- lift $ apply subject rules 
-    modifyRuntimeZipper (`Z.put` Branch rewritten) -- TODO: `Branch` is wrong here, right?
+    modifyRuntimeZipper (`Z.spliceIn` rewritten)
     -- Begin 3 (I Love Laziness)
-    downLook <- gets (Z.firstChild . runtimeZipper)
-    rightLook <- gets (Z.right . runtimeZipper)
-    upNTimesThenRightLook <- gets (Z.keepTryingUntil Z.up Z.right . runtimeZipper)
-    let newZipper = head (catMaybes [downLook, rightLook, Just upNTimesThenRightLook])
+    newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
+    when verbose (lift $ print newZipper)
     -- Give back the value we use to assess termination
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
     pure (rewriteCount, atTop)
@@ -140,9 +141,9 @@ fixStep = go 0
 run :: Runtime -> IO Runtime
 run = execStateT fixStep
 
-runEasy :: [Tree RValue] -> IO ([Tree RValue], Rules)
-runEasy inTrees = do
-    out <- run (Runtime emptyRules emptyRules (Z.zipperFromTrees inTrees))
+runEasy :: Bool -> [Tree RValue] -> IO ([Tree RValue], Rules)
+runEasy verbose inTrees = do
+    out <- run (Runtime verbose emptyRules emptyRules (Z.zipperFromTrees inTrees))
     pure (unzipper . runtimeZipper $ out, runtimeRules out)
     where
         -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here

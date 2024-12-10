@@ -1,6 +1,6 @@
 module Zipper where
 import Core
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, catMaybes)
 
 data Zipper a = Zipper {
     _Left :: [Tree a],
@@ -15,6 +15,15 @@ look = _Content
 put :: Zipper a -> Tree a -> Zipper a
 put z t = z { _Content = t }
 
+hasChildren :: Zipper a -> Bool
+hasChildren z = case _Content z of 
+    (Leaf _) -> False
+    (Branch []) -> False
+    (Branch _) -> True
+
+
+-- Zipper creation --
+
 zipperFromTrees :: [Tree a] -> Zipper a
 zipperFromTrees trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch trees }
 
@@ -24,11 +33,15 @@ zipperFromTree tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = tr
 treeFromZipper :: Zipper a -> Tree a
 treeFromZipper = look . upmost
 
-hasChildren :: Zipper a -> Bool
-hasChildren z = case _Content z of 
-    (Leaf _) -> False
-    (Branch []) -> False
-    (Branch _) -> True
+-- Modify a zipper, splicing in a bunch of trees in place of and to the left of the focus
+-- Note that calling `nextDfs` or `right` will not give back any of the spliced in data, as it's all to the left
+spliceIn :: Zipper a -> [Tree a] -> Zipper a
+spliceIn z [] = z
+spliceIn z [tree] = z { _Content = tree }
+spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
+
+
+-- Zipper combinators --
 
 -- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#farthest
 -- Combinator for going as far as you can in one direction of the zipper
@@ -47,7 +60,13 @@ keepTryingUntil f end = go
             Just y -> y
             Nothing -> maybe x go (f x)
 
+-- Gives the next tree element in DFS order, or the tip element
+nextDfs :: Zipper a -> Zipper a
+nextDfs z = head $ catMaybes [firstChild z, right z, Just $ keepTryingUntil up right z]
 
+-- Zipper navigation primitives --
+
+-- Refocuses the zipper on its first child, if it exists
 firstChild :: Zipper a -> Maybe (Zipper a)
 firstChild z = case _Content z of 
     Leaf _ -> Nothing
@@ -55,7 +74,7 @@ firstChild z = case _Content z of
     Branch (x:xs) -> Just Zipper {
         _Left = [],
         _Right = xs,
-        _Ups = (reverse $ _Left z, _Right z):_Ups z,
+        _Ups = (_Left z, _Right z):_Ups z,
         _Content = x
     }
 
@@ -82,13 +101,13 @@ right z = case _Right z of
     }
 
 up :: Zipper a -> Maybe (Zipper a)
-up z = case _Ups $ leftmost z of
+up z = let lz = leftmost z in case _Ups lz of
     [] -> Nothing
     (leftPath, rightPath):rest -> Just Zipper {
         _Left = leftPath,
         _Right = rightPath,
         _Ups = rest,
-        _Content = Branch $ _Content z:_Right z
+        _Content = Branch $ _Content lz:_Right lz
     }
 upmost :: Zipper a -> Zipper a
 upmost = most up

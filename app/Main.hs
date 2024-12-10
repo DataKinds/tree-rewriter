@@ -31,7 +31,7 @@ ensureTHCompilation = [
     ]
 
 testTHCompilation :: IO ()
-testTHCompilation = runEasy ensureTHCompilation >>= print
+testTHCompilation = runEasy False ensureTHCompilation >>= print
 
 runProg :: T.Text -> OwO -> IO ()
 runProg prog (OwO filepath printOutput extraVerbose) = let
@@ -46,7 +46,7 @@ runProg prog (OwO filepath printOutput extraVerbose) = let
                 putStrLn "| Parsed from input |"
                 putStrLn "+-------------------+"
                 mapM_ (putStrLn . sexprprint) rvals
-            (rvals', defs) <- runEasy rvals
+            (rvals', defs) <- runEasy extraVerbose rvals
             when extraVerbose $ do
                 putStrLn ""
                 print defs

@@ -29,6 +29,7 @@ library
       Parser
       Runtime
       TH
+      Zipper
   other-modules:
       Paths_tree_rewriter
   autogen-modules:

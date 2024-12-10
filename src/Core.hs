@@ -97,7 +97,7 @@ sexprprint (Leaf a) = show a
 sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
 
 instance (Show a) => Show (Tree a) where
-    show = prettyprint
+    show = sexprprint
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
