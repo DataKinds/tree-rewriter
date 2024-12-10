@@ -8,11 +8,10 @@ import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
-import Data.Functor ((<&>), void)
 import qualified Data.Text.ICU as ICU
-import Data.Maybe (catMaybes, mapMaybe, fromJust)
-import Data.Bifunctor (first, Bifunctor (second))
-import Control.Monad.Trans.State (get, StateT (..))
+import Data.Maybe (mapMaybe, fromJust)
+import Data.Bifunctor (first)
+import Control.Monad.Trans.State (StateT (..))
 import Control.Monad.Trans.State (put)
 import Control.Monad.Trans.Class (lift)
 
@@ -290,7 +289,7 @@ tryApply _ _ _ = pure False
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- Check the tip of the input tree, attempting to apply all rewrite rules at the tip
+-- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
 -- On a successful rule match, the state holds the pattern variable bindings and we give back the template
 searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe [Tree RValue]
 searchPatterns rval rr@(Rules rules) = let

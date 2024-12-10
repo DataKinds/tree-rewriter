@@ -2,16 +2,11 @@ module Runtime where
     
 import Core
 import qualified Zipper as Z
-import Control.Monad.Trans.Accum
 import qualified Data.Text as T
-import Debug.Trace
-import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
-import Data.Functor.Identity (Identity(Identity))
 import Data.Text.ICU (ParseError, regex')
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, put, execStateT)
-import Data.Maybe (catMaybes)
-import Control.Monad (guard, unless, when)
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
+import Control.Monad (unless, when)
 
 
 -- Runtime value eDSL -- 
