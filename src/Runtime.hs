@@ -74,7 +74,7 @@ data DefStyle = TreeDef (Tree RValue) [Tree RValue]
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe DefStyle
 recognizeDef (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = pure $ TreeDef pattern templates
-recognizeDef (Branch (pattern:(Leaf (RSymbol "\\")):templates)) = pure $ TreeSingleUseDef pattern templates
+recognizeDef (Branch (pattern:(Leaf (RSymbol "|")):templates)) = pure $ TreeSingleUseDef pattern templates
 recognizeDef _ = Nothing
 
 -- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
@@ -90,7 +90,7 @@ eatDef = do
         -- handle one time use rewrite rules
         Just (TreeSingleUseDef pattern templates) -> do
             addSingleUseTreeRule (Rewrite pattern templates)
-            modifyRuntimeZipper (flip Z.put $ branch []) -- TODO: I kinda want lambda rules to just be eaten entirely with no trace
+            modifyRuntimeZipper Z.dropFocus
         _ -> pure ()
 
 -- Execute a Rosin runtime --

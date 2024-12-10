@@ -1,4 +1,4 @@
-ROSIN?="stack run --"
+ROSIN?=stack run --
 
 test: sample/regression/*.rosin
 	$(foreach testfile, $^, echo 'running $(testfile)'; $(ROSIN) $(testfile);)

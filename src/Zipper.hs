@@ -41,6 +41,17 @@ spliceIn z [tree] = z { _Content = tree }
 spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
 
 
+-- Drop the focused tree and give back a zipper looking to the right, left, or above the previous focus
+dropFocus :: Zipper a -> Zipper a
+dropFocus z = tryLeft . tryRight . tryUp . dropAll $ z
+    where dropRight lz = lz { _Right = tail (_Right lz) }
+          dropLeft rz = rz { _Left = tail (_Left rz) }
+          dropAll z' = z' { _Content = Branch [] }
+          tryLeft fallback = maybe fallback dropRight (left z)
+          tryRight fallback = maybe fallback dropLeft (right z)
+          tryUp fallback = fromMaybe fallback (up z)
+
+
 -- Zipper combinators --
 
 -- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#farthest
