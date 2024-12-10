@@ -1,14 +1,12 @@
 module Runtime where
     
 import Core
-import Control.Monad.Trans.Accum
+import qualified Zipper as Z
 import qualified Data.Text as T
-import Debug.Trace
-import Data.Either (rights)
 import Control.Monad.Trans.Class (lift)
-import Data.Functor.Identity (Identity(Identity))
 import Data.Text.ICU (ParseError, regex')
-
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
+import Control.Monad (unless, when)
 
 
 -- Runtime value eDSL -- 
@@ -28,64 +26,123 @@ pvar = Leaf . RVariable
 branch :: [Tree a] -> Tree a
 branch = Branch
 
--- Ruleset: Pattern and template building eDSL --
-type WithRuleset = Accum Rules
-type WithIORuleset = AccumT Rules IO
-type Ruleset = WithRuleset ()
+-- Runtime handles the state of the rewrite head processing the input data 
+data Runtime = Runtime {
+    -- Do we print out debug information?
+    runtimeVerbose :: Bool,
+    -- What tree rewriting rules are active?
+    runtimeRules :: Rules,
+    -- What tree rewriting lambdas are active?
+    runtimeSingleUseRules :: Rules,
+    -- Where are we in the data tree?
+    runtimeZipper :: Z.Zipper RValue
+} deriving (Show)
+type RuntimeTV m v = StateT Runtime m v
+type RuntimeT m = RuntimeTV m ()
 
--- Rewriting rule
-addRule :: Rewrite RValue -> Ruleset
-addRule = add . Rules . pure
+-- Runtime lenses -- 
+updateRuntimeRules :: (Rules -> Rules) -> Runtime -> Runtime
+updateRuntimeRules f b = b { runtimeRules = f (runtimeRules b) }
+updateRuntimeSingleUseRules :: (Rules -> Rules) -> Runtime -> Runtime
+updateRuntimeSingleUseRules f b = b { runtimeSingleUseRules = f (runtimeSingleUseRules b) }
+updateRuntimeZipper :: (Z.Zipper RValue -> Z.Zipper RValue) -> Runtime -> Runtime
+updateRuntimeZipper f b = b { runtimeZipper = f (runtimeZipper b) }
 
-rule :: Tree RValue -> [Tree RValue] -> Ruleset
-rule pattern templates = addRule $ Rewrite pattern templates
+-- Runtime lens state modifiers --
+modifyRuntimeRules :: Monad m => (Rules -> Rules) -> RuntimeT m
+modifyRuntimeRules = modify . updateRuntimeRules
+modifyRuntimeSingleUseRules :: Monad m => (Rules -> Rules) -> RuntimeT m
+modifyRuntimeSingleUseRules = modify . updateRuntimeSingleUseRules
+modifyRuntimeZipper :: Monad m => (Z.Zipper RValue -> Z.Zipper RValue) -> StateT Runtime m ()
+modifyRuntimeZipper = modify . updateRuntimeZipper
 
-(~>) :: Tree RValue -> [Tree RValue] -> Ruleset
-(~>) = rule
+-- Add a new tree rewriting rule into the runtime
+addTreeRule :: Monad m => Rewrite RValue -> RuntimeT m
+addTreeRule rule = modifyRuntimeRules (Rules . (rule:) . unrules)
 
--- Running Ruleset --
--- Create a rules object from the Ruleset eDSL
-makeRules :: WithRuleset a -> Rules 
-makeRules = flip execAccum mempty
+-- Add a new single use tree rewriting rule into the runtime
+addSingleUseTreeRule :: Monad m => Rewrite RValue -> RuntimeT m
+addSingleUseTreeRule rule = modifyRuntimeSingleUseRules (Rules . (rule:) . unrules)
 
--- DFS a tree looking for definitions. Consume them and delete the tree branch containing the def.
-eatDefs :: Tree RValue -> WithRuleset (Tree RValue)
-eatDefs (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = addRule (Rewrite pattern templates) >> pure (branch [sym "defined", str ruleStr])
+
+-- Parse and ingest definitions --
+
+-- What types of definition are there?
+data DefStyle = TreeDef (Tree RValue) [Tree RValue] 
+              | TreeSingleUseDef (Tree RValue) [Tree RValue]
+
+-- Given a tree, is the head of it listing out a rewrite rule?
+recognizeDef :: Tree RValue -> Maybe DefStyle
+recognizeDef (Branch (pattern:(Leaf (RSymbol "~>")):templates)) = pure $ TreeDef pattern templates
+recognizeDef (Branch (pattern:(Leaf (RSymbol "|")):templates)) = pure $ TreeSingleUseDef pattern templates
+recognizeDef _ = Nothing
+
+-- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
+eatDef :: Monad m => RuntimeT m
+eatDef = do
+    subject <- gets (Z.look . runtimeZipper)
+    case recognizeDef subject of 
+        -- handle regular old tree data rewrite rules
+        Just (TreeDef pattern templates) -> do
+            addTreeRule (Rewrite pattern templates)
+            let ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
+            modifyRuntimeZipper (flip Z.put $ branch [sym "defined", str ruleStr])
+        -- handle one time use rewrite rules
+        Just (TreeSingleUseDef pattern templates) -> do
+            addSingleUseTreeRule (Rewrite pattern templates)
+            modifyRuntimeZipper Z.dropFocus
+        _ -> pure ()
+
+-- Execute a Rosin runtime --
+
+-- Carry out one step of Rosin's execution. This essentially carries out the following:
+--   1) We check for a definition at the current rewrite head and ingest it if there's one there
+--   2) We try to apply our rewrite rules at the current rewrite head
+--   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
+-- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). There should never be more than 1 rule applied per step.
+runStep :: RuntimeTV IO (Int, Bool)
+runStep = do
+    verbose <- gets runtimeVerbose
+    -- Begin 1
+    eatDef 
+    -- Begin 2
+    rules <- gets runtimeRules 
+    subject <- gets (Z.look . runtimeZipper)
+    (rewritten, rewriteCount) <- lift $ apply subject rules 
+    modifyRuntimeZipper (`Z.spliceIn` rewritten)
+    -- Begin 3 (I Love Laziness)
+    newZipper <- gets (Z.nextDfs . runtimeZipper)
+    modifyRuntimeZipper (const newZipper)
+    when verbose (lift $ print newZipper)
+    -- Give back the value we use to assess termination
+    atTop <- gets ((== []) . Z._Ups . runtimeZipper)
+    pure (rewriteCount, atTop)
+
+-- Run `runStep` until there's no point...
+fixStep :: RuntimeT IO
+fixStep = go 0
+    where 
+        readyToStop = do
+            (count, reset) <- runStep
+            unless reset (if count > 0 then go count else readyToStop)
+        go count = do
+            (count', reset) <- runStep
+            if reset
+                then readyToStop
+                else go $ count + count'
+            
+
+-- Executes a Rosin runtime
+run :: Runtime -> IO Runtime
+run = execStateT fixStep
+
+runEasy :: Bool -> [Tree RValue] -> IO ([Tree RValue], Rules)
+runEasy verbose inTrees = do
+    out <- run (Runtime verbose emptyRules emptyRules (Z.zipperFromTrees inTrees))
+    pure (unzipper . runtimeZipper $ out, runtimeRules out)
     where
-        ruleStr = sexprprint pattern ++ " ~> " ++ unwords (map sexprprint templates)
-eatDefs (Branch bs) = Branch <$> mapM eatDefs bs
-eatDefs l = pure l
-
-
-liftIORuleset :: WithRuleset a -> WithIORuleset a
-liftIORuleset = mapAccumT (\(Identity a) -> pure a)
-
--- Rewrite terms once, creating or modifying definitions as they arise
--- Left if no rewrite rules applied, right if some did
-    -- TODO: set up a better monad with a multiset bag
-runStep :: [Tree RValue] -> WithIORuleset (Either [Tree RValue] [Tree RValue])
-runStep [] = pure . Left $ []
-runStep trees = do 
-    -- detect definitions
-    noDefsTrees <- liftIORuleset $ mapM eatDefs trees
-    rules <- look
-    -- apply rewrites
-    let _lrTrees = flip applyRewrites rules <$> noDefsTrees 
-    lrTrees <- lift $ sequence _lrTrees
-    case rights lrTrees of
-        -- no rewrites happened
-        []  -> pure . Left $ noDefsTrees
-        -- rewrites happened! be careful to not force their values here
-        _ -> pure . Right $ concatMap (either id id) lrTrees
-
--- Runs a rewrite ruleset, from a starting ruleset, until it does not match
-run :: Rules -> [Tree RValue] -> IO ([Tree RValue], Rules)
-run rules inputTrees = runAccumT (add rules >> go inputTrees) mempty
-    where
-        go trees = do
-            lrTree <- runStep trees
-            case lrTree of
-                Left trees' -> pure trees'
-                Right trees' -> go trees'
-
-
+        -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
+        unzipper z = case Z.treeFromZipper z of
+            Branch trees -> trees
+            val@(Leaf _) -> [val]
+        emptyRules = Rules []

@@ -3,12 +3,10 @@ module TH where
 import Language.Haskell.TH
 import Text.Parsec
     ( spaces,
-      (<|>),
       try, runParserT )
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
-import Control.Monad.Trans.Accum
-import Parser (RuleParser, flex, literalParser)
+import Parser (RuleParser, literalParser)
 import Data.Functor.Identity ( Identity(runIdentity) )
 
 -- Quasiquote helpers --

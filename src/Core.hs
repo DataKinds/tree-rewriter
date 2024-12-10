@@ -8,11 +8,10 @@ import qualified Data.Map as M
 import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
-import Data.Functor ((<&>), void)
 import qualified Data.Text.ICU as ICU
-import Data.Maybe (catMaybes, mapMaybe, fromJust)
-import Data.Bifunctor (first, Bifunctor (second))
-import Control.Monad.Trans.State (get, StateT (..))
+import Data.Maybe (mapMaybe, fromJust)
+import Data.Bifunctor (first)
+import Control.Monad.Trans.State (StateT (..))
 import Control.Monad.Trans.State (put)
 import Control.Monad.Trans.Class (lift)
 
@@ -97,15 +96,16 @@ sexprprint (Leaf a) = show a
 sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
 
 instance (Show a) => Show (Tree a) where
-    show = prettyprint
+    show = sexprprint
 
 -- Tree rewrite rule datatype
 -- Parameterized on leaf type
-data Rewrite a = Rewrite (Tree a) [Tree a] deriving (TH.Lift)
-rewritePattern :: Rewrite a -> Tree a
-rewritePattern (Rewrite pat _) = pat
-rewriteTemplate :: Rewrite a -> [Tree a]
-rewriteTemplate (Rewrite _ templ) = templ
+data Rewrite a = Rewrite {
+    -- The pattern to match in the data tree
+    rewritePattern :: Tree a,
+    -- The template to replace the matched pattern with
+    rewriteTemplate :: [Tree a]
+} deriving (TH.Lift)
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
@@ -190,6 +190,19 @@ makeRegexPVar name = PVar {
     pvarTag = PVarRegexGroup,
     pvarName = name
 }
+
+-- List of rules for mutating the data tree
+newtype Rules = Rules {
+    unrules :: [Rewrite RValue]
+}
+
+instance Show Rules where
+    show (Rules rewrites) = unlines . concat $ [
+        ["+---------------+"],
+        ["| Rewrite rules |"],
+        ["+---------------+"],
+        show <$> rewrites]
+
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
@@ -276,7 +289,7 @@ tryApply _ _ _ = pure False
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- Check the tip of the input tree, attempting to apply all rewrite rules at the tip
+-- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
 -- On a successful rule match, the state holds the pattern variable bindings and we give back the template
 searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe [Tree RValue]
 searchPatterns rval rr@(Rules rules) = let
@@ -302,27 +315,7 @@ bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder 
         -- We failed to match an inhabited branch, let's BFS
         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
--- BFS the input tree to try applying all rewrite rules anywhere it's possible. Similar to `bfsPatterns`. --
--- Evaluates to the new tree and the number of rewrite rules applied in this step -- 
-apply :: Tree RValue -> Rules -> IO ([Tree RValue], Integer)
-apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
-    Just (template, binder) -> do
-        -- We found a match! Let's inject the variables
-        (treeLists, _) <- runStateT (mapM betaReduce template) binder
-        pure (concat treeLists, 1)
-    Nothing -> case rval of
-        -- If we failed to match a nub branch, we give it back unchanged
-        Branch [] -> pure ([rval], 0)
-        -- If we failed to match an inhabited branch, let's match the branch's children
-        Branch rtrees -> do
-            treeList <- mapM (`apply` rules) rtrees
-            let (rtrees', count) = foldr (\(rtree, apCount) (accTree, accCount) -> (rtree:accTree, apCount+accCount)) ([], 0) treeList
-            pure ([Branch . concat $ rtrees'], count)
-        -- If we failed to match a single runtime value, we give it back unchanged
-        Leaf _ -> pure ([rval], 0)
-
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
--- TODO: this function can bottom, let's return errors with a proper monad!
 betaReduce :: Tree RValue -> StateT Binder IO [Tree RValue]
 betaReduce (Branch trees) = do
     treeLists <- mapM betaReduce trees
@@ -358,33 +351,11 @@ betaReduce (Leaf (RString pstr)) = do
 betaReduce (Leaf pval) = pure [Leaf pval]
 
 
--- Rule list used for execution
-newtype Rules = Rules [Rewrite RValue]
-
-unrules :: Rules -> [Rewrite RValue]
-unrules (Rules rewrites) = rewrites
-
-instance Show Rules where
-    show (Rules rewrites) = unlines . concat $ [
-        ["+---------------+"],
-        ["| Rewrite rules |"],
-        ["+---------------+"],
-        show <$> rewrites]
-
-instance Semigroup Rules where
-    -- TODO: make this more efficient
-    Rules rewrites <> Rules rewrites' = Rules (rewrites ++ rewrites')
-
-instance Monoid Rules where
-    mempty = Rules []
-
-
--- Left if no rewrites applied
--- Right the new runtime values if a rewrite applied
-applyRewrites :: Tree RValue -> Rules -> IO (Either [Tree RValue] [Tree RValue])
-applyRewrites rval rules = maybe (Left [rval]) Right <$> _applyRewrites rval rules
-
-_applyRewrites :: Tree RValue -> Rules -> IO (Maybe [Tree RValue])
-_applyRewrites rval rules = apply rval rules <&> (\case
-            (_, 0) -> Nothing
-            (rvals', _) -> Just rvals')
+-- Try applying all rewrite rules at the tip of the tree.
+-- Evaluates to the new trees and the number of rewrite rules applied in this step 
+apply :: Tree RValue -> Rules -> IO ([Tree RValue], Int)
+apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
+    Just (template, binder) -> do -- We found a match! Let's inject the variables
+        (treeLists, _) <- runStateT (mapM betaReduce template) binder
+        pure (concat treeLists, 1)
+    Nothing -> pure ([rval], 0) -- We failed to find a match, let's give our input back unchanged
