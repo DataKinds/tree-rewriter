@@ -294,23 +294,14 @@ fst3 (a,_,_)=a
 -- On a successful rule match, the state holds the pattern variable bindings and we give back the matched rewrite rule
 searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe (Rewrite RValue)
 searchPatterns rval rr@(Rules rules) = let
-    -- patterns = rewritePattern <$> rules
-    -- templates = rewriteTemplate <$> rules
-    -- makeMatchAttempts = tryApply rr rval <$> patterns
-    -- matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState emptyBinder <$> makeMatchAttempts) templates
-    -- (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
     ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
     ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
     in case find (fst . snd) ruleAttempts of
         Just (matchedRule, (_, binding)) -> put binding >> pure matchedRule
         Nothing -> lift Nothing
-    -- (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
-    -- in case possibleSuccess of
-    --     (_, binding, templ):_ -> put binding >> pure templ
-    --     [] -> lift Nothing
 
--- BFS the input tree to try applying all rewrite rules anywhere it's possible.
--- Similar to `apply`, just with no rewriting happening. Used in eager matching
+-- BFS the input tree to try applying all rewrite rules anywhere it's possible. Doesn't do any rewriting, just checks if
+-- a given set of rules would match anywhere in an input tree. Used in eager matching.
 bfsPatterns :: Tree RValue -> Rules -> Bool
 bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
     Just _ -> True
