@@ -10,10 +10,11 @@ import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
 import Data.Maybe (mapMaybe, fromJust)
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, Bifunctor (bimap), second)
 import Control.Monad.Trans.State (StateT (..))
 import Control.Monad.Trans.State (put)
 import Control.Monad.Trans.Class (lift)
+import Data.Foldable (find)
 
 instance Eq ICU.Regex where
     a == b = show a == show b
@@ -105,7 +106,7 @@ data Rewrite a = Rewrite {
     rewritePattern :: Tree a,
     -- The template to replace the matched pattern with
     rewriteTemplate :: [Tree a]
-} deriving (TH.Lift)
+} deriving (TH.Lift, Eq)
 
 instance Show a => Show (Rewrite a) where
     show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
@@ -290,17 +291,23 @@ fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
 -- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
--- On a successful rule match, the state holds the pattern variable bindings and we give back the template
-searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe [Tree RValue]
+-- On a successful rule match, the state holds the pattern variable bindings and we give back the matched rewrite rule
+searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe (Rewrite RValue)
 searchPatterns rval rr@(Rules rules) = let
-    patterns = rewritePattern <$> rules
-    templates = rewriteTemplate <$> rules
-    makeMatchAttempts = tryApply rr rval <$> patterns
-    matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState emptyBinder <$> makeMatchAttempts) templates
-    (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
-    in case possibleSuccess of
-        (_, binding, templ):_ -> put binding >> pure templ
-        [] -> lift Nothing
+    -- patterns = rewritePattern <$> rules
+    -- templates = rewriteTemplate <$> rules
+    -- makeMatchAttempts = tryApply rr rval <$> patterns
+    -- matchAttemptsWithTemplates = zipWith (\(success, binding) template -> (success,binding,template)) (flip runState emptyBinder <$> makeMatchAttempts) templates
+    -- (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
+    ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
+    ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
+    in case find (fst . snd) ruleAttempts of
+        Just (matchedRule, (_, binding)) -> put binding >> pure matchedRule
+        Nothing -> lift Nothing
+    -- (_, possibleSuccess) = break fst3 matchAttemptsWithTemplates
+    -- in case possibleSuccess of
+    --     (_, binding, templ):_ -> put binding >> pure templ
+    --     [] -> lift Nothing
 
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible.
 -- Similar to `apply`, just with no rewriting happening. Used in eager matching
@@ -352,10 +359,10 @@ betaReduce (Leaf pval) = pure [Leaf pval]
 
 
 -- Try applying all rewrite rules at the tip of the tree.
--- Evaluates to the new trees and the number of rewrite rules applied in this step 
-apply :: Tree RValue -> Rules -> IO ([Tree RValue], Int)
+-- Evaluates to the new trees and the rewrite rule (if any) applied during this step
+apply :: Tree RValue -> Rules -> IO ([Tree RValue], Maybe (Rewrite RValue))
 apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
-    Just (template, binder) -> do -- We found a match! Let's inject the variables
+    Just (rule@(Rewrite _ template), binder) -> do -- We found a match! Let's inject the variables
         (treeLists, _) <- runStateT (mapM betaReduce template) binder
-        pure (concat treeLists, 1)
-    Nothing -> pure ([rval], 0) -- We failed to find a match, let's give our input back unchanged
+        pure (concat treeLists, Just rule)
+    Nothing -> pure ([rval], Nothing) -- We failed to find a match, let's give our input back unchanged

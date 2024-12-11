@@ -7,6 +7,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Text.ICU (ParseError, regex')
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
 import Control.Monad (unless, when)
+import Data.Maybe (isJust, fromJust)
 
 
 -- Runtime value eDSL -- 
@@ -49,20 +50,20 @@ updateRuntimeZipper :: (Z.Zipper RValue -> Z.Zipper RValue) -> Runtime -> Runtim
 updateRuntimeZipper f b = b { runtimeZipper = f (runtimeZipper b) }
 
 -- Runtime lens state modifiers --
-modifyRuntimeRules :: Monad m => (Rules -> Rules) -> RuntimeT m
-modifyRuntimeRules = modify . updateRuntimeRules
-modifyRuntimeSingleUseRules :: Monad m => (Rules -> Rules) -> RuntimeT m
-modifyRuntimeSingleUseRules = modify . updateRuntimeSingleUseRules
+modifyRuntimeRules :: Monad m => ([Rewrite RValue] -> [Rewrite RValue]) -> RuntimeT m
+modifyRuntimeRules f = modify . updateRuntimeRules $ Rules . f . unrules
+modifyRuntimeSingleUseRules :: Monad m => ([Rewrite RValue] -> [Rewrite RValue]) -> RuntimeT m
+modifyRuntimeSingleUseRules f = modify . updateRuntimeSingleUseRules $ Rules . f . unrules
 modifyRuntimeZipper :: Monad m => (Z.Zipper RValue -> Z.Zipper RValue) -> StateT Runtime m ()
 modifyRuntimeZipper = modify . updateRuntimeZipper
 
 -- Add a new tree rewriting rule into the runtime
 addTreeRule :: Monad m => Rewrite RValue -> RuntimeT m
-addTreeRule rule = modifyRuntimeRules (Rules . (rule:) . unrules)
+addTreeRule rule = modifyRuntimeRules (rule:)
 
 -- Add a new single use tree rewriting rule into the runtime
 addSingleUseTreeRule :: Monad m => Rewrite RValue -> RuntimeT m
-addSingleUseTreeRule rule = modifyRuntimeSingleUseRules (Rules . (rule:) . unrules)
+addSingleUseTreeRule rule = modifyRuntimeSingleUseRules (rule:)
 
 
 -- Parse and ingest definitions --
@@ -99,24 +100,32 @@ eatDef = do
 --   1) We check for a definition at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head
 --   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
--- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). There should never be more than 1 rule applied per step.
+-- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
 runStep :: RuntimeTV IO (Int, Bool)
 runStep = do
     verbose <- gets runtimeVerbose
     -- Begin 1
     eatDef 
     -- Begin 2
+    -- Apply regular tree rewriting rules
     rules <- gets runtimeRules 
     subject <- gets (Z.look . runtimeZipper)
-    (rewritten, rewriteCount) <- lift $ apply subject rules 
-    modifyRuntimeZipper (`Z.spliceIn` rewritten)
+    (rewritten, rewriteRule) <- lift $ apply subject rules 
+    when (isJust rewriteRule) $ modifyRuntimeZipper (`Z.spliceIn` rewritten)
+    -- Apply single use tree rewriting rules
+    rules' <- gets runtimeSingleUseRules
+    subject' <- gets (Z.look . runtimeZipper)
+    (rewritten', ruleToDelete) <- lift $ apply subject' rules' 
+    when (isJust ruleToDelete) $ do
+        modifyRuntimeZipper (`Z.spliceIn` rewritten')
+        modifyRuntimeSingleUseRules (filter (/= fromJust ruleToDelete))
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
     when verbose (lift $ print newZipper)
     -- Give back the value we use to assess termination
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    pure (rewriteCount, atTop)
+    pure (maybe 0 (const 1) rewriteRule, atTop)
 
 -- Run `runStep` until there's no point...
 fixStep :: RuntimeT IO
