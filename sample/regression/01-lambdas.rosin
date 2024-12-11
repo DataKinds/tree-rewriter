@@ -4,8 +4,11 @@
 ((Test a :desc Given :test We expect :val) ~> (t :desc :test :val))
 
 (Test a "Lambda rule"
-    Given (((fruit basket) | apples oranges pears dragonfruit) 
+    Given (((fruit basket) ~ apples oranges pears dragonfruit) 
            (fruit basket) 
            (fruit basket)) 
     We expect (apples oranges pears dragonfruit
                (fruit basket)))
+
+(Test a "Confusing named rule"
+       Given ((once ~ once once) once) We expect (once once))

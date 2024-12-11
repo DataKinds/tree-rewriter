@@ -15,9 +15,13 @@ import Control.Monad.Trans.State (StateT (..))
 import Control.Monad.Trans.State (put)
 import Control.Monad.Trans.Class (lift)
 import Data.Foldable (find)
+import Data.Function (on)
 
 instance Eq ICU.Regex where
-    a == b = show a == show b
+    (==) = (==) `on` show
+
+instance Ord ICU.Regex where
+    compare = compare `on` show
 
 instance TH.Lift ICU.Regex where
     liftTyped = undefined
@@ -27,7 +31,7 @@ instance TH.Lift ICU.Regex where
 ------------------------------------------------------------
 
 -- Enum for special accumulators
-data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (TH.Lift, Eq)
+data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (TH.Lift, Eq, Ord)
 instance Show SpecialAccumTag where
     show SASum     = "+"
     show SANegate  = "-"
@@ -38,7 +42,7 @@ instance Show SpecialAccumTag where
     show SAUnpack  = "%"
 
 -- Pattern variable tags, holding the origin-type of the pattern variable and any special data it needs to operate
-data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (TH.Lift, Eq)
+data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (TH.Lift, Eq, Ord)
 
 -- Pattern values. The PVar record holds values that need to be tracked for all pattern variables. 
 -- Currently this data includes 
@@ -49,7 +53,7 @@ data PVar = PVar {
     pvarEager :: Bool,
     pvarTag :: PVarTag,
     pvarName :: T.Text
-} deriving (TH.Lift, Eq)
+} deriving (TH.Lift, Eq, Ord)
 
 -- Decision functions for many characteristics of PVars
 pvarSpecialAccumAcceptor :: PVar -> Bool
@@ -71,9 +75,9 @@ pvarSigil (PVar eager tag _) = T.pack $ go tag:eagerSigil
 
 instance Show PVar where
     show pvar = T.unpack . T.concat $ [pvarSigil pvar, pvarName pvar]
-
+ 
 -- Runtime values. This is the structure that Rosin trees are parameterized over: the "leaf type".
-data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (TH.Lift, Eq)
+data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (TH.Lift, Eq, Ord)
 
 instance Show RValue where
     show (RSymbol t) = T.unpack t
@@ -83,7 +87,7 @@ instance Show RValue where
     show (RVariable t) = show t
 
 -- The tree!
-data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq)
+data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
