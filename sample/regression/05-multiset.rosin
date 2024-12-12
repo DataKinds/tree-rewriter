@@ -8,10 +8,21 @@
         (|(apple pear orange peach))
         ((apple pear) |)
         ((pear orange)|)
-        (peach|)
+        ((peach)|)
     )
     We expect (
         ((pear orange)|)
     ))
+
+(Test a "Plain terms can be parsed and consumed"
+    Given (
+        ((pomme pomegranate) |> weird-fruit-salad)
+        (|pomme)
+        (|pomegranate)
+        (|(pomme pomegranate))
+        (weird-fruit-salad|)
+        (weird-fruit-salad |)
+    )
+    We expect ())
 
 (1|3 & hello~world)

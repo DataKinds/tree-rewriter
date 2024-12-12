@@ -354,7 +354,7 @@ betaReduce (Leaf pval) = pure [Leaf pval]
 
 
 -- Try applying all rewrite rules at the tip of the tree.
--- Evaluates to the new trees and the rewrite rule (if any) applied during this step
+-- Evaluates to the new trees and the rewrite rule + passed index (if any) applied during this step
 apply :: Tree RValue -> Rules -> IO ([Tree RValue], Maybe (Rewrite RValue))
 apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
     Just (rule@(Rewrite _ template), binder) -> do -- We found a match! Let's inject the variables

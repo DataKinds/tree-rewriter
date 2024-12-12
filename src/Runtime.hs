@@ -1,4 +1,6 @@
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Runtime where
     
@@ -78,16 +80,41 @@ addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
 data MultisetAction = MultisetAction {
     multisetPops :: [Tree RValue],
     multisetPushs :: [Tree RValue]
-} deriving (Show)
+}
+
+instance Show MultisetAction where
+    show :: MultisetAction -> String
+    show ma@(MultisetAction pops pushs) = let 
+        strPops = unwords $ sexprprint <$> pops
+        strPushs = unwords $ sexprprint <$> pushs
+        in case ma of 
+            (MultisetAction [] []) -> "|"
+            (MultisetAction [] _) -> "| " ++ strPushs
+            (MultisetAction _ []) -> strPops ++ " |"
+            (MultisetAction _ _) -> concat [strPops, " | ", strPushs]
 
 -- is this definition single use or will it apply forever?
-data UseCount = UseOnce | UseMany deriving (Show)
+data UseCount = UseOnce | UseMany deriving (Show, Eq)
 
 -- What types of definition are there?
 data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
               | MultisetDef UseCount MultisetAction
               | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue]
-            deriving (Show)
+
+defUseCount :: EatenDef -> UseCount
+defUseCount = \case 
+    TreeDef uc _ _ -> uc
+    MultisetDef uc _ -> uc
+    ComboDef uc _ _ _ -> uc
+
+instance Show EatenDef where
+    show (TreeDef useCount pat templates) = let 
+        op = if useCount == UseOnce then " ~ " else " ~> "
+        in concat [sexprprint pat, op, unwords $ sexprprint <$> templates]
+    show (MultisetDef useCount multisetAction) = show multisetAction -- TODO: shows UseMany rules wrong
+    show (ComboDef useCount multisetAction pat templates) = let 
+        op = if useCount == UseOnce then " ~ " else " ~> "
+        in concat [show multisetAction, " & ", sexprprint pat, op, unwords $ sexprprint <$> templates]
 
 defToRewrite :: EatenDef -> Maybe (Rewrite RValue)
 defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
@@ -120,22 +147,32 @@ eatDef :: Monad m => RuntimeT m
 eatDef = do
     subject <- gets (Z.look . runtimeZipper)
     case recognizeDef subject of 
-        -- handle regular old tree data rewrite rules
-        Just td@(TreeDef UseMany pat templates) -> do
-            addRule td
-            let ruleStr = sexprprint pat ++ " ~> " ++ unwords (map sexprprint templates)
-            modifyRuntimeZipper (flip Z.put $ branch [sym "defined", str ruleStr])
-        Just td@(ComboDef UseMany (MultisetAction pops pushes) pat templates) -> do
-            addRule td
-            let ruleStr = concat [unwords $ map sexprprint pops, " | ", unwords $ map sexprprint pushes, " & ", sexprprint pat, " ~> ", unwords (map sexprprint templates)]
-            modifyRuntimeZipper (flip Z.put $ branch [sym "defined", str ruleStr])
-        -- handle one time use rewrite rules
-        Just td@(TreeDef UseOnce pat templates) -> do
-            addSingleUseRule td
-            modifyRuntimeZipper Z.dropFocus
-        _ -> pure ()
+        -- Add the rule definition to the runtime and snip it out from the input tree
+        Just td -> case defUseCount td of
+            UseOnce -> do
+                addSingleUseRule td
+                modifyRuntimeZipper Z.dropFocus
+            UseMany -> do
+                addRule td
+                modifyRuntimeZipper (`Z.put` branch [sym "defined", str $ show td])
+        Nothing -> pure ()
 
 -- Execute a Rosin runtime --
+
+-- Tries to apply all given rules at the focus of the runtime zipper, giving NO consideration to the multiset state.
+-- Gives back a rule if it was applied. May mutate the zipper.
+applyTreeDefs :: [EatenDef] -> RuntimeTV IO (Maybe (Rewrite RValue))
+applyTreeDefs defs = do
+    -- Apply regular tree rewriting rules
+    subject <- gets (Z.look . runtimeZipper)
+    (rewritten, maybeRewriteRule) <- lift $ apply subject (toTreeRules defs)
+    case maybeRewriteRule of
+        Nothing -> pure Nothing
+        Just rewriteRule -> do
+            modifyRuntimeZipper (`Z.spliceIn` rewritten)
+            pure $ Just rewriteRule
+    where toTreeRules :: [EatenDef] -> Rules
+          toTreeRules = Rules . mapMaybe defToRewrite
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition at the current rewrite head and ingest it if there's one there
@@ -148,26 +185,22 @@ runStep = do
     -- Begin 1
     eatDef 
     -- Begin 2
-    -- Apply regular tree rewriting rules
-    rules <- gets (Rules . mapMaybe defToRewrite . runtimeRules)
-    subject <- gets (Z.look . runtimeZipper)
-    (rewritten, rewriteRule) <- lift $ apply subject rules 
-    when (isJust rewriteRule) $ modifyRuntimeZipper (`Z.spliceIn` rewritten)
     -- Apply single use tree rewriting rules
-    rules' <- gets (Rules . mapMaybe defToRewrite . runtimeSingleUseRules)
-    subject' <- gets (Z.look . runtimeZipper)
-    (rewritten', ruleToDelete) <- lift $ apply subject' rules' 
-    when (isJust ruleToDelete) $ do
-        modifyRuntimeZipper (`Z.spliceIn` rewritten')
-        let (Rewrite patternToDelete _) = fromJust ruleToDelete
+    defs <- gets runtimeSingleUseRules
+    maybeTreeRewrite <- applyTreeDefs defs
+    when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
+        let (Rewrite patternToDelete _) = fromJust maybeTreeRewrite
         modifyRuntimeSingleUseRules (filter (patternDefEq patternToDelete))
+    -- Apply multi use tree rewriting rules
+    defs' <- gets runtimeRules
+    maybeTreeRewrite' <- applyTreeDefs defs'
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
     when verbose (lift $ print newZipper)
     -- Give back the value we use to assess termination
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    pure (maybe 0 (const 1) rewriteRule, atTop)
+    pure (sum $ maybe 0 (const 1) <$> [maybeTreeRewrite, maybeTreeRewrite'], atTop)
         where
             -- True if the EatenDef has the same pattern as the tree
             patternDefEq :: Tree RValue -> EatenDef -> Bool
