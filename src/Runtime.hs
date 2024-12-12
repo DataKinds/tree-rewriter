@@ -14,6 +14,7 @@ import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
 import qualified Data.Map as M
 import Data.Function (on)
+import Multiset (Multiset)
 
 
 -- Runtime value eDSL -- 
@@ -44,7 +45,7 @@ data Runtime = Runtime {
     -- Where are we in the data tree?
     runtimeZipper :: Z.Zipper RValue,
     -- Multiset state!
-    runtimeMultiset :: M.Map (Tree RValue) Int
+    runtimeMultiset :: Multiset (Tree RValue) 
 } deriving (Show)
 type RuntimeTV m v = StateT Runtime m v
 type RuntimeT m = RuntimeTV m ()
@@ -174,6 +175,14 @@ applyTreeDefs defs = do
     where toTreeRules :: [EatenDef] -> Rules
           toTreeRules = Rules . mapMaybe defToRewrite
 
+-- Filters a list of defs down to only those which are satisfied by the current state of the multiset
+filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
+filterByMultiset defs = do
+    pocket <- gets runtimeMultiset 
+    pure $ filter (ok pocket) defs
+    where ok ms = undefined
+
+
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head
@@ -187,13 +196,15 @@ runStep = do
     -- Begin 2
     -- Apply single use tree rewriting rules
     defs <- gets runtimeSingleUseRules
-    maybeTreeRewrite <- applyTreeDefs defs
+    filteredDefs <- filterByMultiset defs
+    maybeTreeRewrite <- applyTreeDefs filteredDefs
     when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
         let (Rewrite patternToDelete _) = fromJust maybeTreeRewrite
         modifyRuntimeSingleUseRules (filter (patternDefEq patternToDelete))
     -- Apply multi use tree rewriting rules
     defs' <- gets runtimeRules
-    maybeTreeRewrite' <- applyTreeDefs defs'
+    filteredDefs' <- filterByMultiset defs'
+    maybeTreeRewrite' <- applyTreeDefs filteredDefs'
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
