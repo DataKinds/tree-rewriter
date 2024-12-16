@@ -1,6 +1,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Runtime where
     
@@ -14,7 +15,7 @@ import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
 import qualified Data.Map as M
 import Data.Function (on)
-import Multiset (Multiset)
+import qualified Multiset as MS 
 
 
 -- Runtime value eDSL -- 
@@ -45,7 +46,7 @@ data Runtime = Runtime {
     -- Where are we in the data tree?
     runtimeZipper :: Z.Zipper RValue,
     -- Multiset state!
-    runtimeMultiset :: Multiset (Tree RValue) 
+    runtimeMultiset :: MS.Multiset (Tree RValue) 
 } deriving (Show)
 type RuntimeTV m v = StateT Runtime m v
 type RuntimeT m = RuntimeTV m ()
@@ -79,20 +80,16 @@ addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
 
 -- What action does matching this rewrite rule require on the multiset? 
 data MultisetAction = MultisetAction {
-    multisetPops :: [Tree RValue],
-    multisetPushs :: [Tree RValue]
+    multisetPops :: MS.Multiset (Tree RValue),
+    multisetPushs :: MS.Multiset (Tree RValue)
 }
 
 instance Show MultisetAction where
     show :: MultisetAction -> String
-    show ma@(MultisetAction pops pushs) = let 
-        strPops = unwords $ sexprprint <$> pops
-        strPushs = unwords $ sexprprint <$> pushs
-        in case ma of 
-            (MultisetAction [] []) -> "|"
-            (MultisetAction [] _) -> "| " ++ strPushs
-            (MultisetAction _ []) -> strPops ++ " |"
-            (MultisetAction _ _) -> concat [strPops, " | ", strPushs]
+    show (MultisetAction pops pushs) = let 
+        strPops = if MS.null pops then "" else show pops
+        strPushs = if MS.null pushs then "" else show pushs
+        in concat [strPops, "|", strPushs]
 
 -- is this definition single use or will it apply forever?
 data UseCount = UseOnce | UseMany deriving (Show, Eq)
@@ -122,6 +119,12 @@ defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
 defToRewrite (ComboDef _ _ pat templates) = Just $ Rewrite pat templates
 defToRewrite _ = Nothing
 
+-- What, if any, patterns does this definition want to match out of the multiset bag?
+defWantsFromBag :: EatenDef -> MS.Multiset (Tree RValue)
+defWantsFromBag (MultisetDef _ ma) = multisetPops ma
+defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
+defWantsFromBag _ = MS.empty
+
 unbranch :: Tree RValue -> [Tree RValue]
 unbranch (Branch trees) = trees
 unbranch leaf = [leaf]
@@ -134,14 +137,19 @@ recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing --
 recognizeDef (Branch trees) = case trees of
     (pat:(LeafSym "~>"):templates) -> pure $ TreeDef UseMany pat templates
-    (pops:(LeafSym "|>"):[pushs]) -> pure . MultisetDef UseMany $ (MultisetAction `on` unbranch) pops pushs
+    (pops:(LeafSym "|>"):[pushs]) -> pure . MultisetDef UseMany $ maFromTrees pops pushs
     (pat:(LeafSym "~"):templates)-> pure $ TreeDef UseOnce pat templates
-    (pops:(LeafSym "|"):[pushs]) -> pure . MultisetDef UseOnce $ (MultisetAction `on` unbranch) pops pushs
+    (pops:(LeafSym "|"):[pushs]) -> pure . MultisetDef UseOnce $ maFromTrees pops pushs
     (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym "~>"):templates) -> 
-        pure $ ComboDef UseMany ((MultisetAction `on` unbranch) pops pushs) pat templates
+        pure $ ComboDef UseMany (maFromTrees pops pushs) pat templates
     (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym ">"):templates) -> 
-        pure $ ComboDef UseOnce ((MultisetAction `on` unbranch) pops pushs) pat templates
+        pure $ ComboDef UseOnce (maFromTrees pops pushs) pat templates
     _ -> Nothing
+    where
+        multisetFromTree :: Tree RValue -> MS.Multiset (Tree RValue)
+        multisetFromTree = MS.fromList . map (,1) . unbranch
+        maFromTrees :: Tree RValue -> Tree RValue -> MultisetAction
+        maFromTrees = MultisetAction `on` multisetFromTree
 
 -- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
 eatDef :: Monad m => RuntimeT m
@@ -180,7 +188,9 @@ filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
 filterByMultiset defs = do
     pocket <- gets runtimeMultiset 
     pure $ filter (ok pocket) defs
-    where ok ms = undefined
+    where 
+        ok :: MS.Multiset (Tree RValue) -> EatenDef -> Bool
+        ok ms def = MS.allInside (defWantsFromBag def) ms
 
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
@@ -239,7 +249,7 @@ run :: Runtime -> IO Runtime
 run = execStateT fixStep
 
 emptyRuntime :: Bool -> [Tree RValue] -> Runtime 
-emptyRuntime verbose trees = Runtime verbose emptyRules emptyRules (Z.zipperFromTrees trees) mempty
+emptyRuntime verbose trees = Runtime verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
     where emptyRules = []
 
 runEasy :: Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])

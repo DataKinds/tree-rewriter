@@ -1,7 +1,7 @@
 ROSIN?=stack run --
 
 test: sample/regression/*.rosin
-	$(foreach testfile, $^, echo 'running $(testfile)'; $(ROSIN) $(testfile);)
+	$(foreach testfile, $^, echo ''; echo 'running $(testfile)\n-----------------------------'; $(ROSIN) $(testfile);)
 
 tn:
 	$(ROSIN) sample/regression/$(n)* -p

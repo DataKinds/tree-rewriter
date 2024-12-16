@@ -5,19 +5,31 @@ import Control.Monad (foldM)
 
 newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Show)
 
--- Is this element inside the multiset in a sufficient quantity? 
-check :: Ord a => (a, Int) -> Multiset a -> Bool
-check (x, n) = maybe False (n <=) . M.lookup x . unmultiset 
+fromList :: Ord a => [(a, Int)] -> Multiset a
+fromList = Multiset . M.fromList
 
+toList :: Ord a => Multiset a -> [(a, Int)] 
+toList = M.toList . unmultiset
+
+empty :: Ord a => Multiset a
+empty = Multiset M.empty
+
+null :: Ord a => Multiset a -> Bool
+null = M.null . unmultiset
+
+-- Is this element inside the multiset in a sufficient quantity? 
+inside :: Ord a => (a, Int) -> Multiset a -> Bool
+inside (x, n) = maybe False (n <=) . M.lookup x . unmultiset 
 
 -- Are these elements inside the multiset in a sufficient quantity? 
-checkMany :: Ord a => [(a, Int)] -> Multiset a -> Bool
-checkMany xns ms = all (`check` ms) xns
+allInside :: Ord a => Multiset a -> Multiset a -> Bool
+allInside xns ms = all (`inside` ms) (toList xns)
 
 -- Take out this many copies of this element from our multiset, if we can!
 grab :: Ord a => (a, Int) -> Multiset a -> Maybe (Multiset a)
-grab xn@(x,n) ms = if check xn ms then Just . Multiset . M.adjust (subtract n) x . unmultiset $ ms else Nothing
+grab xn@(x,n) ms = if inside xn ms then Just . Multiset . M.adjust (subtract n) x . unmultiset $ ms else Nothing
 
 -- Take out this many copies of these elements from our multiset, if we can!
-grabMany :: Ord a => [(a, Int)] -> Multiset a -> Maybe (Multiset a)
-grabMany xns ms = Multiset <$> foldM (\m xn -> unmultiset <$> grab xn (Multiset m)) (unmultiset ms) xns
+grabMany :: Ord a => Multiset a -> Multiset a -> Maybe (Multiset a)
+grabMany xns ms = Multiset <$> foldM (\m xn -> unmultiset <$> grab xn (Multiset m)) ms' xns'
+    where ms' = unmultiset ms; xns' = toList xns
