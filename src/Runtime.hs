@@ -12,14 +12,16 @@ import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
 import Control.Monad (unless, when)
-import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
+import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe, listToMaybe, isNothing)
 import qualified Data.Map as M
 import Data.Function (on)
 import qualified Multiset as MS 
-import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..))
+import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..), isMultisetDef)
 import Data.Bifunctor (Bifunctor(bimap, second))
 import System.FilePath (makeRelative, (</>), takeDirectory)
 import Parser (parse)
+import Data.Bool (bool)
+import Debug.Trace (trace)
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -47,14 +49,18 @@ updateRuntimeSingleUseRules :: ([EatenDef] -> [EatenDef]) -> Runtime -> Runtime
 updateRuntimeSingleUseRules f b = b { runtimeSingleUseRules = f (runtimeSingleUseRules b) }
 updateRuntimeZipper :: (Z.Zipper RValue -> Z.Zipper RValue) -> Runtime -> Runtime
 updateRuntimeZipper f b = b { runtimeZipper = f (runtimeZipper b) }
+updateRuntimeMultiset :: (MS.Multiset (Tree RValue) -> MS.Multiset (Tree RValue)) -> Runtime -> Runtime
+updateRuntimeMultiset f b = b { runtimeMultiset = f (runtimeMultiset b) }
 
 -- Runtime lens state modifiers --
 modifyRuntimeRules :: Monad m => ([EatenDef] -> [EatenDef]) -> RuntimeT m
 modifyRuntimeRules = modify . updateRuntimeRules
 modifyRuntimeSingleUseRules :: Monad m => ([EatenDef] -> [EatenDef]) -> RuntimeT m
 modifyRuntimeSingleUseRules = modify . updateRuntimeSingleUseRules
-modifyRuntimeZipper :: Monad m => (Z.Zipper RValue -> Z.Zipper RValue) -> StateT Runtime m ()
+modifyRuntimeZipper :: Monad m => (Z.Zipper RValue -> Z.Zipper RValue) -> RuntimeT m
 modifyRuntimeZipper = modify . updateRuntimeZipper
+modifyRuntimeMultiset :: Monad m => (MS.Multiset (Tree RValue) -> MS.Multiset (Tree RValue)) -> RuntimeT m
+modifyRuntimeMultiset = modify . updateRuntimeMultiset
 
 -- Add a new tree rewriting rule into the runtime
 addRule :: Monad m => EatenDef -> RuntimeT m
@@ -83,6 +89,12 @@ defWantsFromBag :: EatenDef -> MS.Multiset (Tree RValue)
 defWantsFromBag (MultisetDef _ ma) = multisetPops ma
 defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
 defWantsFromBag _ = MS.empty
+
+-- What, if any, patterns does this definition want to put into the multiset bag?
+defPutsInBag :: EatenDef -> MS.Multiset (Tree RValue)
+defPutsInBag (MultisetDef _ ma) = multisetPushs ma
+defPutsInBag (ComboDef _ ma _ _) = multisetPushs ma
+defPutsInBag _ = MS.empty
 
 -- Execute a Rosin runtime --
 
@@ -130,20 +142,37 @@ eatBuiltin = do
                 _ -> pure ()
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
--- Tries to apply all given rules at the focus of the runtime zipper, giving NO consideration to the multiset state.
--- Gives back a rule if it was applied. May mutate the zipper.
+thrd :: (a, b, c) -> c
+thrd (_,_,c) = c
+
+-- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
+-- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.
 applyTreeDefs :: [EatenDef] -> RuntimeTV IO (Maybe (Rewrite RValue))
 applyTreeDefs defs = do
-    -- Apply regular tree rewriting rules
     subject <- gets (Z.look . runtimeZipper)
-    (rewritten, maybeRewriteRule) <- lift $ apply subject (toTreeRules defs)
-    case maybeRewriteRule of
+    let treeDefs = filter (isJust . defToRewrite) defs
+        treeRules = mapMaybe defToRewrite defs
+    rewriteTries <- lift $ mapM (apply subject) treeRules
+    let defsWithTries = zipWith (\rw (tree, success) -> (rw, tree, success)) treeDefs rewriteTries
+    case listToMaybe $ dropWhile (not . thrd) defsWithTries of
         Nothing -> pure Nothing
-        Just rewriteRule -> do
+        Just (def, rewritten, _) -> do
             modifyRuntimeZipper (`Z.spliceIn` rewritten)
-            pure $ Just rewriteRule
-    where toTreeRules :: [EatenDef] -> Rules
-          toTreeRules = Rules . mapMaybe defToRewrite
+            -- TODO: should do variable binding here! maybe we match multisets by converting to (element, count) pairs... hmm...
+            modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag def))
+            modifyRuntimeMultiset (MS.putMany (defPutsInBag def))
+            pure . defToRewrite $ def
+
+-- Tries to apply all given multiset-only rules, regardless of the current multiset state.
+-- Gives back the def if it was applied
+applyMultisetDefs :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
+applyMultisetDefs defs =
+    case filter isMultisetDef defs of 
+        [] -> pure Nothing
+        bagDef:_ -> do
+            modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag bagDef)) -- TODO: pattern fun
+            modifyRuntimeMultiset (MS.putMany (defPutsInBag bagDef)) -- TODO: pattern fun
+            pure $ Just bagDef 
 
 -- Filters a list of defs down to only those which are satisfied by the current state of the multiset
 filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
@@ -186,6 +215,13 @@ runStep = do
     -- Apply multi use tree rewriting rules
     defs' <- gets runtimeRules >>= filterByMultiset
     maybeTreeRewrite' <- applyTreeDefs defs'
+    -- Apply single use multiset only rules
+    defs'' <- gets runtimeSingleUseRules >>= filterByMultiset
+    appliedMultisetDef <- applyMultisetDefs defs''
+    when (isJust appliedMultisetDef) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedMultisetDef))
+    -- Apply multi use multiset only rules
+    defs''' <- gets runtimeRules >>= filterByMultiset
+    appliedMultisetDef' <- applyMultisetDefs defs'''
 
     -- Begin 3 (I Love Laziness)
     printZipper 3
@@ -195,7 +231,7 @@ runStep = do
     -- Give back the value we use to assess termination
     printZipper 4
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    let rulesApplied = sum $ maybe 0 (const 1) <$> [maybeTreeRewrite, maybeTreeRewrite']
+    let rulesApplied = sum (bool 0 1 <$> [isJust maybeTreeRewrite, isJust maybeTreeRewrite', isJust appliedMultisetDef, isJust appliedMultisetDef'])
     when verbose (lift $ print rulesApplied)
     when verbose (lift $ print atTop)
     pure (rulesApplied, atTop)

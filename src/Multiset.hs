@@ -3,10 +3,10 @@ import qualified Data.Map as M
 import Control.Monad (foldM)
 
 
-newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Show)
+newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Show, Eq)
 
 fromList :: Ord a => [(a, Int)] -> Multiset a
-fromList = Multiset . M.fromList
+fromList = Multiset . M.fromListWith (+)
 
 toList :: Ord a => Multiset a -> [(a, Int)] 
 toList = M.toList . unmultiset
@@ -33,3 +33,10 @@ grab xn@(x,n) ms = if inside xn ms then Just . Multiset . M.adjust (subtract n) 
 grabMany :: Ord a => Multiset a -> Multiset a -> Maybe (Multiset a)
 grabMany xns ms = Multiset <$> foldM (\m xn -> unmultiset <$> grab xn (Multiset m)) ms' xns'
     where ms' = unmultiset ms; xns' = toList xns
+
+grabManyRaw :: Ord a => Multiset a -> Multiset a -> Multiset a
+grabManyRaw xns ms = Multiset $ M.unionWith (-) (unmultiset ms) (unmultiset xns)
+
+-- Put this many copies of these elements into our multiset
+putMany :: Ord a => Multiset a -> Multiset a -> Multiset a
+putMany xns ms = Multiset $ M.unionWith (+) (unmultiset xns) (unmultiset ms)

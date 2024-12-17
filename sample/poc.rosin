@@ -1,2 +1,10 @@
-(peach |)
-(apple |)
+(| pear)
+(| pear)
+(| pear)
+(| orange)
+
+(@ bag)
+
+((pear pear) | pear-salad)
+
+(@ bag)

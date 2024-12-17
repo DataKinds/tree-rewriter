@@ -48,12 +48,12 @@ spliceRight z' = go z' . reverse
 
 -- Drop the focused tree and give back a zipper looking to the right, left, or above the previous focus
 dropFocus :: Zipper a -> Zipper a
-dropFocus z = tryLeft . tryRight . tryUp $ z
+dropFocus z = tryLeft . tryRightUp . tryUp $ z
     where dropRight lz = lz { _Right = tail (_Right lz) }
           dropLeft rz = rz { _Left = tail (_Left rz) }
           nullContent z' = z' { _Content = Branch [] }
           tryLeft fallback = maybe fallback dropRight (left z)
-          tryRight fallback = maybe fallback dropLeft (right z)
+          tryRightUp fallback = fromMaybe fallback $ up (maybe fallback dropLeft (right z))
           tryUp fallback = nullContent $ fromMaybe fallback (up z)
 
 

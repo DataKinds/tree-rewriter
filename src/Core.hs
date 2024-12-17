@@ -217,7 +217,7 @@ makeRegexPVar name = PVar {
 }
 
 -- List of rules for mutating the data tree
-newtype Rules = Rules {
+newtype Rules = Rules { -- TODO: Remove
     unrules :: [Rewrite RValue]
 }
 
@@ -373,11 +373,11 @@ betaReduce (Leaf (RString pstr)) = do
 betaReduce (Leaf pval) = pure [Leaf pval]
 
 
--- Try applying all rewrite rules at the tip of the tree.
--- Evaluates to the new trees and the rewrite rule + passed index (if any) applied during this step
-apply :: Tree RValue -> Rules -> IO ([Tree RValue], Maybe (Rewrite RValue))
-apply rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
+-- Try applying a rewrite rule at the tip of the tree.
+-- Evaluates to the new trees and whether we matched the rewrite rule
+apply :: Tree RValue -> Rewrite RValue -> IO ([Tree RValue], Bool)
+apply rval rewrite = case runStateT (searchPatterns rval (Rules [rewrite])) emptyBinder of -- TODO: searchPatterns is overkill?
     Just (rule@(Rewrite _ template), binder) -> do -- We found a match! Let's inject the variables
         (treeLists, _) <- runStateT (mapM betaReduce template) binder
-        pure (concat treeLists, Just rule)
-    Nothing -> pure ([rval], Nothing) -- We failed to find a match, let's give our input back unchanged
+        pure (concat treeLists, True)
+    Nothing -> pure ([rval], False) -- We failed to find a match, let's give our input back unchanged

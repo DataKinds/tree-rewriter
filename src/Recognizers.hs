@@ -17,7 +17,7 @@ import Data.Function (on)
 data MultisetAction = MultisetAction {
     multisetPops :: MS.Multiset (Tree RValue),
     multisetPushs :: MS.Multiset (Tree RValue)
-}
+} deriving (Eq)
 instance Show MultisetAction where
     show (MultisetAction pops pushs) = let 
         strPops = if MS.null pops then "" else show pops
@@ -30,7 +30,12 @@ data UseCount = UseOnce | UseMany deriving (Show, Eq)
 -- What types of definition are there?
 data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
               | MultisetDef UseCount MultisetAction
-              | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue]
+              | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue] deriving (Eq)
+
+isMultisetDef :: EatenDef -> Bool
+isMultisetDef (MultisetDef _ _) = True
+isMultisetDef _ = False
+
 instance Show EatenDef where
     show (TreeDef useCount pat templates) = let 
         op = if useCount == UseOnce then " ~ " else " ~> "
