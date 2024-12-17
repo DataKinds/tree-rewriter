@@ -16,6 +16,8 @@ import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
 import qualified Data.Map as M
 import Data.Function (on)
 import qualified Multiset as MS 
+import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..))
+import Data.Bifunctor (Bifunctor(bimap, second))
 
 
 -- Runtime value eDSL -- 
@@ -24,8 +26,8 @@ sym :: String -> Tree RValue
 sym = Leaf . RSymbol . T.pack
 str :: String -> Tree RValue
 str = Leaf . RString . T.pack
-num :: Integer -> Tree RValue
-num = Leaf . RNumber
+num :: Integral i => i -> Tree RValue
+num = Leaf . RNumber . fromIntegral
 regex :: String -> Either ParseError (Tree RValue)
 regex s = regex' [] (T.pack s) >>= (pure . Leaf . RRegex)
 -- Pattern variables 
@@ -78,41 +80,11 @@ addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
 
 -- Parse and ingest definitions --
 
--- What action does matching this rewrite rule require on the multiset? 
-data MultisetAction = MultisetAction {
-    multisetPops :: MS.Multiset (Tree RValue),
-    multisetPushs :: MS.Multiset (Tree RValue)
-}
-
-instance Show MultisetAction where
-    show :: MultisetAction -> String
-    show (MultisetAction pops pushs) = let 
-        strPops = if MS.null pops then "" else show pops
-        strPushs = if MS.null pushs then "" else show pushs
-        in concat [strPops, "|", strPushs]
-
--- is this definition single use or will it apply forever?
-data UseCount = UseOnce | UseMany deriving (Show, Eq)
-
--- What types of definition are there?
-data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
-              | MultisetDef UseCount MultisetAction
-              | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue]
-
 defUseCount :: EatenDef -> UseCount
 defUseCount = \case 
     TreeDef uc _ _ -> uc
     MultisetDef uc _ -> uc
     ComboDef uc _ _ _ -> uc
-
-instance Show EatenDef where
-    show (TreeDef useCount pat templates) = let 
-        op = if useCount == UseOnce then " ~ " else " ~> "
-        in concat [sexprprint pat, op, unwords $ sexprprint <$> templates]
-    show (MultisetDef useCount multisetAction) = show multisetAction -- TODO: shows UseMany rules wrong
-    show (ComboDef useCount multisetAction pat templates) = let 
-        op = if useCount == UseOnce then " ~ " else " ~> "
-        in concat [show multisetAction, " & ", sexprprint pat, op, unwords $ sexprprint <$> templates]
 
 defToRewrite :: EatenDef -> Maybe (Rewrite RValue)
 defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
@@ -125,31 +97,7 @@ defWantsFromBag (MultisetDef _ ma) = multisetPops ma
 defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
 defWantsFromBag _ = MS.empty
 
-unbranch :: Tree RValue -> [Tree RValue]
-unbranch (Branch trees) = trees
-unbranch leaf = [leaf]
-
-pattern LeafSym :: T.Text -> Tree RValue
-pattern LeafSym sym = Leaf (RSymbol sym)
-
--- Given a tree, is the head of it listing out a rewrite rule?
-recognizeDef :: Tree RValue -> Maybe EatenDef
-recognizeDef (Leaf _) = Nothing --
-recognizeDef (Branch trees) = case trees of
-    (pat:(LeafSym "~>"):templates) -> pure $ TreeDef UseMany pat templates
-    (pops:(LeafSym "|>"):[pushs]) -> pure . MultisetDef UseMany $ maFromTrees pops pushs
-    (pat:(LeafSym "~"):templates)-> pure $ TreeDef UseOnce pat templates
-    (pops:(LeafSym "|"):[pushs]) -> pure . MultisetDef UseOnce $ maFromTrees pops pushs
-    (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym "~>"):templates) -> 
-        pure $ ComboDef UseMany (maFromTrees pops pushs) pat templates
-    (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym ">"):templates) -> 
-        pure $ ComboDef UseOnce (maFromTrees pops pushs) pat templates
-    _ -> Nothing
-    where
-        multisetFromTree :: Tree RValue -> MS.Multiset (Tree RValue)
-        multisetFromTree = MS.fromList . map (,1) . unbranch
-        maFromTrees :: Tree RValue -> Tree RValue -> MultisetAction
-        maFromTrees = MultisetAction `on` multisetFromTree
+-- Execute a Rosin runtime --
 
 -- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
 eatDef :: Monad m => RuntimeT m
@@ -166,7 +114,26 @@ eatDef = do
                 modifyRuntimeZipper (`Z.put` branch [sym "defined", str $ show td])
         Nothing -> pure ()
 
--- Execute a Rosin runtime --
+-- Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
+eatBuiltin :: RuntimeT IO
+eatBuiltin = do
+    subject <- gets (Z.look . runtimeZipper)
+    case recognizeBuiltin subject of 
+        Just (BuiltinRule name args) -> dispatch args name
+        Nothing -> pure ()
+    where 
+        dispatch :: [Tree RValue] -> T.Text -> RuntimeT IO
+        dispatch args = \case
+            "version" -> modifyRuntimeZipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
+            "bag" -> do
+                bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
+                modifyRuntimeZipper (`Z.put` bag)
+            "insert" -> case args of
+                Leaf (RString path):_ -> do
+                    contents <- lift . readFile . T.unpack $ path
+                    undefined
+                _ -> pure ()
+            shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 -- Tries to apply all given rules at the focus of the runtime zipper, giving NO consideration to the multiset state.
 -- Gives back a rule if it was applied. May mutate the zipper.
@@ -194,7 +161,7 @@ filterByMultiset defs = do
 
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
---   1) We check for a definition at the current rewrite head and ingest it if there's one there
+--   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head
 --   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
 -- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
@@ -203,18 +170,17 @@ runStep = do
     verbose <- gets runtimeVerbose
     -- Begin 1
     eatDef 
+    eatBuiltin
     -- Begin 2
     -- Apply single use tree rewriting rules
-    defs <- gets runtimeSingleUseRules
-    filteredDefs <- filterByMultiset defs
-    maybeTreeRewrite <- applyTreeDefs filteredDefs
+    defs <- gets runtimeSingleUseRules >>= filterByMultiset
+    maybeTreeRewrite <- applyTreeDefs defs
     when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
         let (Rewrite patternToDelete _) = fromJust maybeTreeRewrite
         modifyRuntimeSingleUseRules (filter (patternDefEq patternToDelete))
     -- Apply multi use tree rewriting rules
-    defs' <- gets runtimeRules
-    filteredDefs' <- filterByMultiset defs'
-    maybeTreeRewrite' <- applyTreeDefs filteredDefs'
+    defs' <- gets runtimeRules >>= filterByMultiset
+    maybeTreeRewrite' <- applyTreeDefs defs'
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)

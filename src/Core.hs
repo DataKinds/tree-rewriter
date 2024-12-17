@@ -89,6 +89,11 @@ instance Show RValue where
 -- The tree!
 data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 
+-- Unwrap one level of branching, if it's possible
+unbranch :: Tree RValue -> [Tree RValue]
+unbranch (Branch trees) = trees
+unbranch leaf = [leaf]
+
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
     where
