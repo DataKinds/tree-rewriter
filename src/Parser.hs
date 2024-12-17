@@ -1,4 +1,4 @@
-module Parser where
+module Parser (module Parser) where
 
 import Text.Parsec
     ( char,
@@ -11,8 +11,8 @@ import Text.Parsec
       try,
       optionMaybe,
       ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail, runParserT, ParseError )
-import Runtime ( sym, str, num, branch, pvar, regex )
-import Core ( Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
+import Core ( sym, str, num, branch, pvar, regex,
+    Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
 import Data.Functor.Identity (Identity (..))

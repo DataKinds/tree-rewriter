@@ -8,10 +8,8 @@ module Recognizers where
 
 import qualified Multiset as MS
 import qualified Data.Text as T
-import qualified Zipper as Z
 import Core (Tree (..), RValue (..), unbranch, sexprprint)
 import Data.Function (on)
-import Control.Monad.Trans.State (gets)
 
 -- Recognizer datatypes! --
 
@@ -53,6 +51,9 @@ data BuiltinRule = BuiltinRule {
 pattern LeafSym :: T.Text -> Tree RValue
 pattern LeafSym sym = Leaf (RSymbol sym)
 
+pattern LeafStr :: T.Text -> Tree RValue
+pattern LeafStr sym = Leaf (RString sym)
+
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing
@@ -93,5 +94,6 @@ recognizeBuiltin (Leaf _) = Nothing
 recognizeBuiltin (Branch trees) = case trees of
     (LeafSym "@"):[LeafSym "bag"] -> pure $ BuiltinRule "bag" []
     (LeafSym "@"):[LeafSym "version"] -> pure $ BuiltinRule "version" []
-    (LeafSym "@"):(LeafSym "cat"):path@[Leaf (RString _)] -> pure $ BuiltinRule "cat" path
+    (LeafSym "@"):(LeafSym "parse"):input@[LeafStr _] -> pure $ BuiltinRule "parse" input
+    (LeafSym "@"):(LeafSym "cat"):path@[LeafStr _] -> pure $ BuiltinRule "cat" path
     _ -> Nothing

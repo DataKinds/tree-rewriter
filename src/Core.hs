@@ -10,12 +10,12 @@ import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
 import Data.Maybe (mapMaybe, fromJust)
-import Data.Bifunctor (first, Bifunctor (bimap), second)
-import Control.Monad.Trans.State (StateT (..))
-import Control.Monad.Trans.State (put)
+import Data.Bifunctor (first, second)
+import Control.Monad.Trans.State ( StateT(..), put )
 import Control.Monad.Trans.Class (lift)
 import Data.Foldable (find)
 import Data.Function (on)
+import Data.Text.ICU (ParseError, regex')
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -75,16 +75,31 @@ pvarSigil (PVar eager tag _) = T.pack $ go tag:eagerSigil
 
 instance Show PVar where
     show pvar = T.unpack . T.concat $ [pvarSigil pvar, pvarName pvar]
- 
+
 -- Runtime values. This is the structure that Rosin trees are parameterized over: the "leaf type".
 data RValue = RSymbol T.Text | RString T.Text | RRegex ICU.Regex | RNumber Integer | RVariable PVar deriving (TH.Lift, Eq, Ord)
-
 instance Show RValue where
     show (RSymbol t) = T.unpack t
     show (RString t) = T.unpack . T.concat $ ["\"", t, "\""]
     show (RRegex t) = T.unpack . T.concat $ ["/", ICU.pattern t, "/"]
     show (RNumber t) = show t
     show (RVariable t) = show t
+
+sym :: String -> Tree RValue
+sym = Leaf . RSymbol . T.pack
+str :: String -> Tree RValue
+str = Leaf . RString . T.pack
+num :: Integral i => i -> Tree RValue
+num = Leaf . RNumber . fromIntegral
+regex :: String -> Either ParseError (Tree RValue)
+regex = fmap (Leaf . RRegex) . regex' [] . T.pack
+-- Pattern variables 
+pvar :: PVar -> Tree RValue
+pvar = Leaf . RVariable
+-- Runtime branch
+branch :: [Tree a] -> Tree a
+branch = Branch
+
 
 -- The tree!
 data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
@@ -142,7 +157,7 @@ updateBinderRegexBindings f b = b { binderRegexBindings = f (binderRegexBindings
 
 -- What name do we use for PVars that go into the Binder? 
 pvarBinderName :: PVar -> T.Text
-pvarBinderName pvar = if pvarRegexGroupAcceptor pvar 
+pvarBinderName pvar = if pvarRegexGroupAcceptor pvar
     then pvarName pvar
     else T.cons (T.head $ pvarSigil pvar) (pvarName pvar)
 
@@ -178,7 +193,7 @@ getRegexBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderRegexBinding
 getBinding :: Monad m => PVar -> StateT Binder m (Maybe [Tree RValue])
 getBinding pvar = case pvarTag pvar of
     PVarRegexGroup -> do
-        binding <- getRegexBinding pvar 
+        binding <- getRegexBinding pvar
         pure (pure . Leaf . RString <$> binding)
     _ -> getTreeBinding pvar
 

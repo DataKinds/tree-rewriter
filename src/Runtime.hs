@@ -10,7 +10,6 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Data.Text.ICU (ParseError, regex')
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
@@ -20,24 +19,8 @@ import qualified Multiset as MS
 import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..))
 import Data.Bifunctor (Bifunctor(bimap, second))
 import System.FilePath (makeRelative, (</>), takeDirectory)
+import Parser (parse)
 
-
--- Runtime value eDSL -- 
--- Runtime leaf values
-sym :: String -> Tree RValue
-sym = Leaf . RSymbol . T.pack
-str :: String -> Tree RValue
-str = Leaf . RString . T.pack
-num :: Integral i => i -> Tree RValue
-num = Leaf . RNumber . fromIntegral
-regex :: String -> Either ParseError (Tree RValue)
-regex s = regex' [] (T.pack s) >>= (pure . Leaf . RRegex)
--- Pattern variables 
-pvar :: PVar -> Tree RValue
-pvar = Leaf . RVariable 
--- Runtime branch
-branch :: [Tree a] -> Tree a
-branch = Branch
 
 -- Runtime handles the state of the rewrite head processing the input data 
 data Runtime = Runtime {
@@ -132,6 +115,13 @@ eatBuiltin = do
             "bag" -> do
                 bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
                 modifyRuntimeZipper (`Z.put` bag)
+            "parse" -> case args of
+                Leaf (RString input):_ -> do
+                    filepath <- gets runtimePath
+                    case parse (T.unpack input) (filepath++"<eval>") of
+                        Left err -> modifyRuntimeZipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
+                        Right success -> modifyRuntimeZipper (`Z.spliceRight` success)
+                _ -> pure ()
             "cat" -> case args of
                 Leaf (RString path):_ -> do
                     pathContext <- gets (takeDirectory . runtimePath)

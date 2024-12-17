@@ -1,2 +1,1 @@
-(@ cat "small.tree")
-(@ cat "./small.tree")
+(@ parse (@ cat "small.tree"))

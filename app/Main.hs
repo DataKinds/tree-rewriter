@@ -2,7 +2,7 @@ module Main (main) where
 
 import Core
 import Runtime
-import Parser
+import Parser (parse)
 import TH
 import qualified Data.Text as T
 import qualified Data.Text.IO as TI

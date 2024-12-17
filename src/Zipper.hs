@@ -40,6 +40,11 @@ spliceIn z [] = z
 spliceIn z [tree] = z { _Content = tree }
 spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
 
+spliceRight :: Zipper a -> [Tree a] -> Zipper a
+spliceRight z' = go z' . reverse
+    where go z [] = z
+          go z [tree] = z { _Content = tree }
+          go z (tree:trees) = z { _Right = tree:_Right z } `go` trees
 
 -- Drop the focused tree and give back a zipper looking to the right, left, or above the previous focus
 dropFocus :: Zipper a -> Zipper a
