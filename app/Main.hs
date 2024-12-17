@@ -9,7 +9,7 @@ import qualified Data.Text.IO as TI
 import Text.Parsec (runParserT)
 import Data.Functor.Identity ( Identity(runIdentity) )
 import Options.Applicative
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Data.Char (isSpace)
 
 
@@ -31,12 +31,11 @@ ensureTHCompilation = [
     ]
 
 testTHCompilation :: IO ()
-testTHCompilation = runEasy False ensureTHCompilation >>= print
+testTHCompilation = runEasy "" False ensureTHCompilation >> pure ()
 
 runProg :: T.Text -> OwO -> IO ()
 runProg prog (OwO filepath printOutput extraVerbose) = let
-    -- TODO: parser should take a Text directly
-    parsed = runIdentity $ runParserT programParser () filepath (T.unpack prog)
+    parsed = parse (T.unpack prog) filepath
     in case parsed of 
         Left err -> fail . show $ err
         Right rvals -> do
@@ -46,7 +45,7 @@ runProg prog (OwO filepath printOutput extraVerbose) = let
                 putStrLn "| Parsed from input |"
                 putStrLn "+-------------------+"
                 mapM_ (putStrLn . sexprprint) rvals
-            (rvals', defs) <- runEasy extraVerbose rvals
+            (rvals', defs) <- runEasy filepath extraVerbose rvals
             when extraVerbose $ do
                 putStrLn ""
                 print defs

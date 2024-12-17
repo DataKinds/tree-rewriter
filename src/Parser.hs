@@ -10,12 +10,12 @@ import Text.Parsec
       many1,
       try,
       optionMaybe,
-      ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail )
+      ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail, runParserT, ParseError )
 import Runtime ( sym, str, num, branch, pvar, regex )
 import Core ( Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
-import Data.Functor.Identity (Identity)
+import Data.Functor.Identity (Identity (..))
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 
@@ -150,3 +150,6 @@ literalParser = choice
 
 programParser :: RuleParser [Tree RValue]
 programParser = (some . flex . try $ literalParser) <* eof
+
+parse :: String -> String -> Either ParseError [Tree RValue]
+parse program filepath = runIdentity $ runParserT programParser () filepath program

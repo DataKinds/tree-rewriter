@@ -8,6 +8,7 @@ module Runtime where
 import Core
 import qualified Zipper as Z
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
 import Data.Text.ICU (ParseError, regex')
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
@@ -18,6 +19,7 @@ import Data.Function (on)
 import qualified Multiset as MS 
 import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..))
 import Data.Bifunctor (Bifunctor(bimap, second))
+import System.FilePath (makeRelative, (</>), takeDirectory)
 
 
 -- Runtime value eDSL -- 
@@ -39,6 +41,8 @@ branch = Branch
 
 -- Runtime handles the state of the rewrite head processing the input data 
 data Runtime = Runtime {
+    -- What file are we executing
+    runtimePath :: String,
     -- Do we print out debug information?
     runtimeVerbose :: Bool,
     -- What rewriting rules are active?
@@ -128,10 +132,11 @@ eatBuiltin = do
             "bag" -> do
                 bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
                 modifyRuntimeZipper (`Z.put` bag)
-            "insert" -> case args of
+            "cat" -> case args of
                 Leaf (RString path):_ -> do
-                    contents <- lift . readFile . T.unpack $ path
-                    undefined
+                    pathContext <- gets (takeDirectory . runtimePath)
+                    fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
+                    modifyRuntimeZipper (`Z.put` (Leaf . RString $ fileContents))
                 _ -> pure ()
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
@@ -214,13 +219,13 @@ fixStep = go 0
 run :: Runtime -> IO Runtime
 run = execStateT fixStep
 
-emptyRuntime :: Bool -> [Tree RValue] -> Runtime 
-emptyRuntime verbose trees = Runtime verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
+emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime 
+emptyRuntime filepath verbose trees = Runtime filepath verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
     where emptyRules = []
 
-runEasy :: Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])
-runEasy verbose inTrees = do
-    out <- run (emptyRuntime verbose inTrees)
+runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])
+runEasy filepath verbose inTrees = do
+    out <- run (emptyRuntime filepath verbose inTrees)
     pure (unzipper . runtimeZipper $ out, runtimeRules out)
     where
         -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here

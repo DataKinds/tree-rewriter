@@ -1,0 +1,2 @@
+(@ cat "small.tree")
+(@ cat "./small.tree")

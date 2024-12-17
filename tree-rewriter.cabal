@@ -27,6 +27,7 @@ library
       Core
       Multiset
       Parser
+      Recognizers
       Runtime
       TH
       Zipper
@@ -45,6 +46,7 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath
     , optparse-applicative
     , parsec
     , template-haskell
@@ -70,6 +72,7 @@ executable rosin
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath
     , optparse-applicative
     , parsec
     , template-haskell
@@ -97,6 +100,7 @@ test-suite rosin-test
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath
     , optparse-applicative
     , parsec
     , template-haskell

@@ -28,6 +28,7 @@ dependencies:
 - template-haskell
 - parsec
 - optparse-applicative
+- filepath
 
 ghc-options:
 - -Wall
