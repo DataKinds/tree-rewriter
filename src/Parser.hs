@@ -149,7 +149,7 @@ literalParser = choice
     ]
 
 programParser :: RuleParser [Tree RValue]
-programParser = (some . flex . try $ literalParser) <* eof
+programParser = spaces *> (some . flex . try $ literalParser) <* eof
 
 parse :: String -> String -> Either ParseError [Tree RValue]
 parse program filepath = runIdentity $ runParserT programParser () filepath program

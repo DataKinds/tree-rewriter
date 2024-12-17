@@ -163,10 +163,20 @@ filterByMultiset defs = do
 runStep :: RuntimeTV IO (Int, Bool)
 runStep = do
     verbose <- gets runtimeVerbose
+    let printZipper n = when verbose $ do
+            zipper <- gets runtimeZipper
+            lift $ putStr (show n ++ ": ")
+            lift $ print zipper
+    when verbose (lift $ putStrLn "== STARTING STEP ==")
+
     -- Begin 1
+    printZipper 1 
     eatDef 
+    printZipper 1.5
     eatBuiltin
+
     -- Begin 2
+    printZipper 2
     -- Apply single use tree rewriting rules
     defs <- gets runtimeSingleUseRules >>= filterByMultiset
     maybeTreeRewrite <- applyTreeDefs defs
@@ -176,13 +186,19 @@ runStep = do
     -- Apply multi use tree rewriting rules
     defs' <- gets runtimeRules >>= filterByMultiset
     maybeTreeRewrite' <- applyTreeDefs defs'
+
     -- Begin 3 (I Love Laziness)
+    printZipper 3
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
-    when verbose (lift $ print newZipper)
+    
     -- Give back the value we use to assess termination
+    printZipper 4
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    pure (sum $ maybe 0 (const 1) <$> [maybeTreeRewrite, maybeTreeRewrite'], atTop)
+    let rulesApplied = sum $ maybe 0 (const 1) <$> [maybeTreeRewrite, maybeTreeRewrite']
+    when verbose (lift $ print rulesApplied)
+    when verbose (lift $ print atTop)
+    pure (rulesApplied, atTop)
         where
             -- True if the EatenDef has the same pattern as the tree
             patternDefEq :: Tree RValue -> EatenDef -> Bool
