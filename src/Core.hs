@@ -234,7 +234,7 @@ instance Show Rules where
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching alone
+tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching alone TODO: make this more ergonomic?
          -> Tree RValue                             -- Input tree
          -> Tree RValue                             -- Pattern to match
          -> Binder_ Bool -- Updated variable bindings, along with whether the match succeeded

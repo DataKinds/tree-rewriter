@@ -22,7 +22,7 @@ import System.FilePath (makeRelative, (</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
 import Debug.Trace (trace)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..))
+import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..))
 import Core (BinderT)
 
 
@@ -156,12 +156,16 @@ hoistState = state . runState
 applyMatchCondition :: MatchCondition -> BinderT RuntimeV Bool
 applyMatchCondition (MultisetPattern ms) = do
     pocket <- lift $ gets runtimeMultiset
-    pure $ MS.allInside () pocket -- TODO: pattern match!
+    pure $ MS.allInside (MS.fromList . map (,1) . unbranch $ ms) pocket -- TODO: pattern match!
 applyMatchCondition (TreePattern pat) = do
-    runtimeRules <- lift $ gets runtimeRules
+    rules <- lift $ gets runtimeRules
     subject <- lift $ gets (Z.look . runtimeZipper)
-    hoistState $ tryApply (Rules []) subject pat
+    hoistState $ tryApply (const (Rules []) rules) subject pat
         -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
+
+applyMatchEffect :: MatchEffect -> BinderT RuntimeV ()
+applyMatchEffect (MultisetPush ms) = lift $ modifyRuntimeMultiset (MS.putMany ms)
+applyMatchEffect (TreeReplacement template) = undefined
 
 -- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
 -- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.

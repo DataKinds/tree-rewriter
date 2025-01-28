@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TupleSections #-}
 -- {-# LANGUAGE UndecidableInstances #-}
 
 -- This module parses and matches patterns in the input tree for use in the Runtime.
@@ -12,6 +13,7 @@ module Recognizers where
 import qualified Data.Text as T
 import Core (Tree (..), RValue (..))
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
+import qualified Multiset as MS
 
 
 pattern LeafSym :: T.Text -> Tree RValue
@@ -45,7 +47,7 @@ recognizeDef (Branch trees) = case trees of
         matchCond SetOp = MultisetPattern
         matchEff :: DefOpType -> [Tree RValue] -> MatchEffect
         matchEff TreeOp = TreeReplacement
-        matchEff SetOp = MultisetPush
+        matchEff SetOp = MultisetPush . MS.fromList . map (,1)
 
 
 -- Built in rules parsed from the input tree!
