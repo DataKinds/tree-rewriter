@@ -5,7 +5,7 @@ module Core where
 import qualified Data.Text as T
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
+import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT, execStateT, evalStateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
@@ -16,6 +16,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Foldable (find)
 import Data.Function (on)
 import Data.Text.ICU (ParseError, regex')
+import Data.Functor.Identity (Identity(..))
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -142,6 +143,8 @@ data Binder = Binder {
     binderTreeBindings :: M.Map T.Text [Tree RValue],
     binderRegexBindings :: M.Map T.Text T.Text
 }
+type BinderT = StateT Binder -- Binder monad
+type Binder_ = BinderT Identity
 
 emptyBinder :: Binder
 emptyBinder = Binder {
@@ -162,19 +165,19 @@ pvarBinderName pvar = if pvarRegexGroupAcceptor pvar
     else T.cons (T.head $ pvarSigil pvar) (pvarName pvar)
 
 -- Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
-addTreeBinding :: Monad m => PVar -> Tree RValue -> StateT Binder m ()
+addTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
 addTreeBinding pvar binding = modify (updateBinderTreeBindings $ M.alter go (pvarBinderName pvar))
     where
         go Nothing = Just [binding]
         go (Just existingBindings) = Just $ binding:existingBindings
 
 -- Get the binding list for a tree pattern variable
-getTreeBinding :: Monad m => PVar -> StateT Binder m (Maybe [Tree RValue])
+getTreeBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
 getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
 
 -- Bind a new or existing tree pattern variable. Succeed if the binding completed, which requires equality with
 -- the existing binding.
-bindIfEqual :: Monad m => PVar -> Tree RValue -> StateT Binder m Bool
+bindIfEqual :: Monad m => PVar -> Tree RValue -> BinderT m Bool
 bindIfEqual pvar binding = do
     prevBinding <- gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
     case prevBinding of
@@ -182,15 +185,15 @@ bindIfEqual pvar binding = do
         _ -> addTreeBinding pvar binding >> pure True
 
 -- Bind a new or existing regex match variable. Overwrite previously bound variables.
-addRegexBinding :: (Monad m) => T.Text -> T.Text -> StateT Binder m ()
+addRegexBinding :: (Monad m) => T.Text -> T.Text -> BinderT m ()
 addRegexBinding groupname matchtext = modify (updateBinderRegexBindings $ M.insert groupname matchtext)
 
 -- Get the binding list for a tree pattern variable
-getRegexBinding :: Monad m => PVar -> StateT Binder m (Maybe T.Text)
+getRegexBinding :: Monad m => PVar -> BinderT m (Maybe T.Text)
 getRegexBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderRegexBindings)
 
 -- Get the correct binding for a PVar. Some PVars may be stored differently in the Binder depending on their tag.
-getBinding :: Monad m => PVar -> StateT Binder m (Maybe [Tree RValue])
+getBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
 getBinding pvar = case pvarTag pvar of
     PVarRegexGroup -> do
         binding <- getRegexBinding pvar
@@ -231,10 +234,10 @@ instance Show Rules where
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching
+tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching alone
          -> Tree RValue                             -- Input tree
          -> Tree RValue                             -- Pattern to match
-         -> State Binder Bool -- Updated variable bindings, along with whether the match succeeded
+         -> Binder_ Bool -- Updated variable bindings, along with whether the match succeeded
 -- Bind pattern variables and special accumulators
 tryApply rules rval (Leaf (RVariable pvar)) = do
     -- Check for submatches and fail out if we're matching an eager variable 
@@ -316,7 +319,7 @@ fst3 (a,_,_)=a
 
 -- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
 -- On a successful rule match, the state holds the pattern variable bindings and we give back the matched rewrite rule
-searchPatterns :: Tree RValue -> Rules -> StateT Binder Maybe (Rewrite RValue)
+searchPatterns :: Tree RValue -> Rules -> BinderT Maybe (Rewrite RValue)
 searchPatterns rval rr@(Rules rules) = let
     ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
     ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
@@ -338,7 +341,7 @@ bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder 
         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
-betaReduce :: Tree RValue -> StateT Binder IO [Tree RValue]
+betaReduce :: Tree RValue -> BinderT IO [Tree RValue]
 betaReduce (Branch trees) = do
     treeLists <- mapM betaReduce trees
     pure [Branch $ concat treeLists]
@@ -376,8 +379,13 @@ betaReduce (Leaf pval) = pure [Leaf pval]
 -- Try applying a rewrite rule at the tip of the tree.
 -- Evaluates to the new trees and whether we matched the rewrite rule
 apply :: Tree RValue -> Rewrite RValue -> IO ([Tree RValue], Bool)
-apply rval rewrite = case runStateT (searchPatterns rval (Rules [rewrite])) emptyBinder of -- TODO: searchPatterns is overkill?
-    Just (rule@(Rewrite _ template), binder) -> do -- We found a match! Let's inject the variables
+apply rval rw@(Rewrite pattern template) = let (success, binder) = runIdentity $ runStateT go emptyBinder 
+    in if success then do
+    -- We found a match! Let's inject the variables 
         (treeLists, _) <- runStateT (mapM betaReduce template) binder
         pure (concat treeLists, True)
-    Nothing -> pure ([rval], False) -- We failed to find a match, let's give our input back unchanged
+    else pure ([rval], False) -- We failed to find a match, let's give our input back unchanged
+    where
+        go :: Binder_ Bool
+        go = tryApply (Rules [rw]) rval pattern
+             -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think

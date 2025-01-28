@@ -10,18 +10,20 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT)
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe, listToMaybe, isNothing)
 import qualified Data.Map as M
 import Data.Function (on)
 import qualified Multiset as MS 
-import Recognizers (EatenDef (..), UseCount (..), MultisetAction (..), recognizeDef, recognizeBuiltin, BuiltinRule (..), isMultisetDef)
+import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
 import Data.Bifunctor (Bifunctor(bimap, second))
 import System.FilePath (makeRelative, (</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
 import Debug.Trace (trace)
+import Definitions (MatchCondition (..), EatenDef, UseCount (..))
+import Core (BinderT)
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -41,6 +43,7 @@ data Runtime = Runtime {
 } deriving (Show)
 type RuntimeTV m v = StateT Runtime m v
 type RuntimeT m = RuntimeTV m ()
+type RuntimeV = State Runtime
 
 -- Runtime lenses -- 
 updateRuntimeRules :: ([EatenDef] -> [EatenDef]) -> Runtime -> Runtime
@@ -73,28 +76,28 @@ addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
 
 -- Parse and ingest definitions --
 
-defUseCount :: EatenDef -> UseCount
-defUseCount = \case 
-    TreeDef uc _ _ -> uc
-    MultisetDef uc _ -> uc
-    ComboDef uc _ _ _ -> uc
+-- defUseCount :: EatenDef -> UseCount
+-- defUseCount = \case 
+--     TreeDef uc _ _ -> uc
+--     MultisetDef uc _ -> uc
+--     ComboDef uc _ _ _ -> uc
 
-defToRewrite :: EatenDef -> Maybe (Rewrite RValue)
-defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
-defToRewrite (ComboDef _ _ pat templates) = Just $ Rewrite pat templates
-defToRewrite _ = Nothing
+-- defToRewrite :: EatenDef -> Maybe (Rewrite RValue)
+-- defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
+-- defToRewrite (ComboDef _ _ pat templates) = Just $ Rewrite pat templates
+-- defToRewrite _ = Nothing
 
--- What, if any, patterns does this definition want to match out of the multiset bag?
-defWantsFromBag :: EatenDef -> MS.Multiset (Tree RValue)
-defWantsFromBag (MultisetDef _ ma) = multisetPops ma
-defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
-defWantsFromBag _ = MS.empty
+-- -- What, if any, patterns does this definition want to match out of the multiset bag?
+-- defWantsFromBag :: EatenDef -> MS.Multiset (Tree RValue)
+-- defWantsFromBag (MultisetDef _ ma) = multisetPops ma
+-- defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
+-- defWantsFromBag _ = MS.empty
 
--- What, if any, patterns does this definition want to put into the multiset bag?
-defPutsInBag :: EatenDef -> MS.Multiset (Tree RValue)
-defPutsInBag (MultisetDef _ ma) = multisetPushs ma
-defPutsInBag (ComboDef _ ma _ _) = multisetPushs ma
-defPutsInBag _ = MS.empty
+-- -- What, if any, patterns does this definition want to put into the multiset bag?
+-- defPutsInBag :: EatenDef -> MS.Multiset (Tree RValue)
+-- defPutsInBag (MultisetDef _ ma) = multisetPushs ma
+-- defPutsInBag (ComboDef _ ma _ _) = multisetPushs ma
+-- defPutsInBag _ = MS.empty
 
 -- Execute a Rosin runtime --
 
@@ -113,37 +116,52 @@ eatDef = do
                 modifyRuntimeZipper (`Z.put` branch [sym "defined", str $ show td])
         Nothing -> pure ()
 
+-- Execute a given builtin
+dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
+dispatchBuiltin args = \case
+    "version" -> modifyRuntimeZipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
+    "bag" -> do
+        bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
+        modifyRuntimeZipper (`Z.put` bag)
+    "parse" -> case args of
+        Leaf (RString input):_ -> do
+            filepath <- gets runtimePath
+            case parse (T.unpack input) (filepath++"<eval>") of
+                Left err -> modifyRuntimeZipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
+                Right success -> modifyRuntimeZipper (`Z.spliceRight` success)
+        _ -> pure ()
+    "cat" -> case args of
+        Leaf (RString path):_ -> do
+            pathContext <- gets (takeDirectory . runtimePath)
+            fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
+            modifyRuntimeZipper (`Z.put` (Leaf . RString $ fileContents))
+        _ -> pure ()
+    shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
+
 -- Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
 eatBuiltin :: RuntimeT IO
 eatBuiltin = do
     subject <- gets (Z.look . runtimeZipper)
     case recognizeBuiltin subject of 
-        Just (BuiltinRule name args) -> dispatch args name
+        Just (BuiltinRule name args) -> dispatchBuiltin args name
         Nothing -> pure ()
-    where 
-        dispatch :: [Tree RValue] -> T.Text -> RuntimeT IO
-        dispatch args = \case
-            "version" -> modifyRuntimeZipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
-            "bag" -> do
-                bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
-                modifyRuntimeZipper (`Z.put` bag)
-            "parse" -> case args of
-                Leaf (RString input):_ -> do
-                    filepath <- gets runtimePath
-                    case parse (T.unpack input) (filepath++"<eval>") of
-                        Left err -> modifyRuntimeZipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
-                        Right success -> modifyRuntimeZipper (`Z.spliceRight` success)
-                _ -> pure ()
-            "cat" -> case args of
-                Leaf (RString path):_ -> do
-                    pathContext <- gets (takeDirectory . runtimePath)
-                    fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
-                    modifyRuntimeZipper (`Z.put` (Leaf . RString $ fileContents))
-                _ -> pure ()
-            shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 thrd :: (a, b, c) -> c
 thrd (_,_,c) = c
+
+hoistState :: (Monad m) => State s a -> StateT s m a
+hoistState = state . runState
+
+-- Bind variables associated with a match condition, or fail out and return False
+applyMatchCondition :: MatchCondition -> BinderT RuntimeV Bool
+applyMatchCondition (MultisetPattern ms) = do
+    pocket <- lift $ gets runtimeMultiset
+    pure $ MS.allInside () pocket -- TODO: pattern match!
+applyMatchCondition (TreePattern pat) = do
+    runtimeRules <- lift $ gets runtimeRules
+    subject <- lift $ gets (Z.look . runtimeZipper)
+    hoistState $ tryApply (Rules []) subject pat
+        -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
 
 -- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
 -- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.
@@ -206,22 +224,20 @@ runStep = do
 
     -- Begin 2
     printZipper 2
+    onceDefs <- gets runtimeSingleUseRules >>= filterByMultiset
+    repeatDefs <- gets runtimeRules >>= filterByMultiset
     -- Apply single use tree rewriting rules
-    defs <- gets runtimeSingleUseRules >>= filterByMultiset
-    maybeTreeRewrite <- applyTreeDefs defs
+    maybeTreeRewrite <- applyTreeDefs onceDefs
     when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
         let (Rewrite patternToDelete _) = fromJust maybeTreeRewrite
         modifyRuntimeSingleUseRules (filter (patternDefEq patternToDelete))
     -- Apply multi use tree rewriting rules
-    defs' <- gets runtimeRules >>= filterByMultiset
-    maybeTreeRewrite' <- applyTreeDefs defs'
+    maybeTreeRewrite' <- applyTreeDefs repeatDefs
     -- Apply single use multiset only rules
-    defs'' <- gets runtimeSingleUseRules >>= filterByMultiset
-    appliedMultisetDef <- applyMultisetDefs defs''
+    appliedMultisetDef <- applyMultisetDefs onceDefs
     when (isJust appliedMultisetDef) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedMultisetDef))
     -- Apply multi use multiset only rules
-    defs''' <- gets runtimeRules >>= filterByMultiset
-    appliedMultisetDef' <- applyMultisetDefs defs'''
+    appliedMultisetDef' <- applyMultisetDefs repeatDefs
 
     -- Begin 3 (I Love Laziness)
     printZipper 3
@@ -232,8 +248,7 @@ runStep = do
     printZipper 4
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
     let rulesApplied = sum (bool 0 1 <$> [isJust maybeTreeRewrite, isJust maybeTreeRewrite', isJust appliedMultisetDef, isJust appliedMultisetDef'])
-    when verbose (lift $ print rulesApplied)
-    when verbose (lift $ print atTop)
+    when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
     pure (rulesApplied, atTop)
         where
             -- True if the EatenDef has the same pattern as the tree
