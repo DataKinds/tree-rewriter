@@ -10,8 +10,8 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state)
-import Control.Monad (unless, when)
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, mapStateT, get)
+import Control.Monad (unless, when, void)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe, listToMaybe, isNothing)
 import qualified Data.Map as M
 import Data.Function (on)
@@ -22,8 +22,11 @@ import System.FilePath (makeRelative, (</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
 import Debug.Trace (trace)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..))
+import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition)
 import Core (BinderT)
+import Control.Monad.IO.Class (MonadIO(liftIO))
+import Data.Foldable (find)
+import Data.List (findIndex)
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -41,7 +44,7 @@ data Runtime = Runtime {
     -- Multiset state!
     runtimeMultiset :: MS.Multiset (Tree RValue) 
 } deriving (Show)
-type RuntimeTV m v = StateT Runtime m v
+type RuntimeTV m = StateT Runtime m
 type RuntimeT m = RuntimeTV m ()
 type RuntimeV = State Runtime
 
@@ -153,57 +156,60 @@ hoistState :: (Monad m) => State s a -> StateT s m a
 hoistState = state . runState
 
 -- Bind variables associated with a match condition, or fail out and return False
-applyMatchCondition :: MatchCondition -> BinderT RuntimeV Bool
-applyMatchCondition (MultisetPattern ms) = do
-    pocket <- lift $ gets runtimeMultiset
-    pure $ MS.allInside (MS.fromList . map (,1) . unbranch $ ms) pocket -- TODO: pattern match!
-applyMatchCondition (TreePattern pat) = do
-    rules <- lift $ gets runtimeRules
-    subject <- lift $ gets (Z.look . runtimeZipper)
-    hoistState $ tryApply (const (Rules []) rules) subject pat
+applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
+applyMatchCondition (MultisetPattern ms) r = let
+    pocket = runtimeMultiset r
+    in pure $ MS.allInside (MS.fromList . map (,1) . unbranch $ ms) pocket -- TODO: pattern match!
+applyMatchCondition (TreePattern pat) r = let
+    rules = runtimeRules r
+    subject = Z.look . runtimeZipper $ r
+    in hoistState $ tryApply (const (Rules []) rules) subject pat
         -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
 
-applyMatchEffect :: MatchEffect -> BinderT RuntimeV ()
+-- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
+applyMatchEffect :: MatchEffect -> BinderT (RuntimeTV IO) ()
 applyMatchEffect (MultisetPush ms) = lift $ modifyRuntimeMultiset (MS.putMany ms)
-applyMatchEffect (TreeReplacement template) = undefined
+applyMatchEffect (TreeReplacement template) = do
+    rewritten <- mapStateT liftIO $ mapM betaReduce template
+    lift $ modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
 -- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
 -- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.
-applyTreeDefs :: [EatenDef] -> RuntimeTV IO (Maybe (Rewrite RValue))
-applyTreeDefs defs = do
-    subject <- gets (Z.look . runtimeZipper)
-    let treeDefs = filter (isJust . defToRewrite) defs
-        treeRules = mapMaybe defToRewrite defs
-    rewriteTries <- lift $ mapM (apply subject) treeRules
-    let defsWithTries = zipWith (\rw (tree, success) -> (rw, tree, success)) treeDefs rewriteTries
-    case listToMaybe $ dropWhile (not . thrd) defsWithTries of
-        Nothing -> pure Nothing
-        Just (def, rewritten, _) -> do
-            modifyRuntimeZipper (`Z.spliceIn` rewritten)
-            -- TODO: should do variable binding here! maybe we match multisets by converting to (element, count) pairs... hmm...
-            modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag def))
-            modifyRuntimeMultiset (MS.putMany (defPutsInBag def))
-            pure . defToRewrite $ def
+-- applyTreeDefs :: [EatenDef] -> RuntimeTV IO (Maybe (Rewrite RValue))
+-- applyTreeDefs defs = do
+--     subject <- gets (Z.look . runtimeZipper)
+--     let treeDefs = filter (isJust . defToRewrite) defs
+--         treeRules = mapMaybe defToRewrite defs
+--     rewriteTries <- lift $ mapM (apply subject) treeRules
+--     let defsWithTries = zipWith (\rw (tree, success) -> (rw, tree, success)) treeDefs rewriteTries
+--     case listToMaybe $ dropWhile (not . thrd) defsWithTries of
+--         Nothing -> pure Nothing
+--         Just (def, rewritten, _) -> do
+--             modifyRuntimeZipper (`Z.spliceIn` rewritten)
+--             -- TODO: should do variable binding here! maybe we match multisets by converting to (element, count) pairs... hmm...
+--             modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag def))
+--             modifyRuntimeMultiset (MS.putMany (defPutsInBag def))
+--             pure . defToRewrite $ def
 
 -- Tries to apply all given multiset-only rules, regardless of the current multiset state.
 -- Gives back the def if it was applied
-applyMultisetDefs :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
-applyMultisetDefs defs =
-    case filter isMultisetDef defs of 
-        [] -> pure Nothing
-        bagDef:_ -> do
-            modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag bagDef)) -- TODO: pattern fun
-            modifyRuntimeMultiset (MS.putMany (defPutsInBag bagDef)) -- TODO: pattern fun
-            pure $ Just bagDef 
+-- applyMultisetDefs :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
+-- applyMultisetDefs defs =
+--     case filter isMultisetDef defs of 
+--         [] -> pure Nothing
+--         bagDef:_ -> do
+--             modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag bagDef)) -- TODO: pattern fun
+--             modifyRuntimeMultiset (MS.putMany (defPutsInBag bagDef)) -- TODO: pattern fun
+--             pure $ Just bagDef 
 
 -- Filters a list of defs down to only those which are satisfied by the current state of the multiset
-filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
-filterByMultiset defs = do
-    pocket <- gets runtimeMultiset 
-    pure $ filter (ok pocket) defs
-    where 
-        ok :: MS.Multiset (Tree RValue) -> EatenDef -> Bool
-        ok ms def = MS.allInside (defWantsFromBag def) ms
+-- filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
+-- filterByMultiset defs = do
+--     pocket <- gets runtimeMultiset 
+--     pure $ filter (ok pocket) defs
+--     where 
+--         ok :: MS.Multiset (Tree RValue) -> EatenDef -> Bool
+--         ok ms def = MS.allInside (defWantsFromBag def) ms
 
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
@@ -228,8 +234,10 @@ runStep = do
 
     -- Begin 2
     printZipper 2
-    onceDefs <- gets runtimeSingleUseRules >>= filterByMultiset
-    repeatDefs <- gets runtimeRules >>= filterByMultiset
+    onceDefs <- gets runtimeSingleUseRules -- >>= filterByMultiset
+    repeatDefs <- gets runtimeRules -- >>= filterByMultiset
+    -- Grab the first single use rule that satisfies all conditions
+    tryDefinitions onceDefs 
     -- Apply single use tree rewriting rules
     maybeTreeRewrite <- applyTreeDefs onceDefs
     when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
@@ -260,6 +268,19 @@ runStep = do
             patternDefEq pat1 def = case defToRewrite def of
                 Nothing -> True
                 Just (Rewrite pat2 _) -> pat1 /= pat2 
+            tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
+            tryBindConditions [] _ = pure True
+            tryBindConditions (cond:xs) r = do
+                success <- applyMatchCondition cond r
+                go <- tryBindConditions xs r
+                pure $ success && go
+            tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
+            tryDefinitions defs r = let 
+                bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
+                binded = second (`runState` emptyBinder) <$> bindActions
+                success = find (fst.snd) binded
+                in pure (fst <$> success)
+
 
 
 -- Run `runStep` until there's no point...
