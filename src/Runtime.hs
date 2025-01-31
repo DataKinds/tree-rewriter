@@ -10,24 +10,18 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, mapStateT, get, put)
-import Control.Monad (unless, when, void)
-import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe, listToMaybe, isNothing)
-import qualified Data.Map as M
-import Data.Function (on)
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, get, put)
+import Control.Monad (unless, when)
+import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS 
 import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
-import Data.Bifunctor (Bifunctor(bimap, second))
-import System.FilePath (makeRelative, (</>), takeDirectory)
+import Data.Bifunctor (Bifunctor(second))
+import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import Debug.Trace (trace)
 import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition, defMatchEffect)
-import Core (BinderT)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
-import Data.List (findIndex)
-import Control.Applicative (Alternative(empty))
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -76,32 +70,6 @@ addRule rule = modifyRuntimeRules (rule:)
 -- Add a new single use tree rewriting rule into the runtime
 addSingleUseRule :: Monad m => EatenDef -> RuntimeT m
 addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
-
-
--- Parse and ingest definitions --
-
--- defUseCount :: EatenDef -> UseCount
--- defUseCount = \case 
---     TreeDef uc _ _ -> uc
---     MultisetDef uc _ -> uc
---     ComboDef uc _ _ _ -> uc
-
--- defToRewrite :: EatenDef -> Maybe (Rewrite RValue)
--- defToRewrite (TreeDef _ pat templates) = Just $ Rewrite pat templates
--- defToRewrite (ComboDef _ _ pat templates) = Just $ Rewrite pat templates
--- defToRewrite _ = Nothing
-
--- -- What, if any, patterns does this definition want to match out of the multiset bag?
--- defWantsFromBag :: EatenDef -> MS.Multiset (Tree RValue)
--- defWantsFromBag (MultisetDef _ ma) = multisetPops ma
--- defWantsFromBag (ComboDef _ ma _ _) = multisetPops ma
--- defWantsFromBag _ = MS.empty
-
--- -- What, if any, patterns does this definition want to put into the multiset bag?
--- defPutsInBag :: EatenDef -> MS.Multiset (Tree RValue)
--- defPutsInBag (MultisetDef _ ma) = multisetPushs ma
--- defPutsInBag (ComboDef _ ma _ _) = multisetPushs ma
--- defPutsInBag _ = MS.empty
 
 -- Execute a Rosin runtime --
 
@@ -176,45 +144,6 @@ applyMatchEffect (TreeReplacement template) = do
     (rewritten, _) <- liftIO rewriteAction
     modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
--- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
--- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.
--- applyTreeDefs :: [EatenDef] -> RuntimeTV IO (Maybe (Rewrite RValue))
--- applyTreeDefs defs = do
---     subject <- gets (Z.look . runtimeZipper)
---     let treeDefs = filter (isJust . defToRewrite) defs
---         treeRules = mapMaybe defToRewrite defs
---     rewriteTries <- lift $ mapM (apply subject) treeRules
---     let defsWithTries = zipWith (\rw (tree, success) -> (rw, tree, success)) treeDefs rewriteTries
---     case listToMaybe $ dropWhile (not . thrd) defsWithTries of
---         Nothing -> pure Nothing
---         Just (def, rewritten, _) -> do
---             modifyRuntimeZipper (`Z.spliceIn` rewritten)
---             -- TODO: should do variable binding here! maybe we match multisets by converting to (element, count) pairs... hmm...
---             modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag def))
---             modifyRuntimeMultiset (MS.putMany (defPutsInBag def))
---             pure . defToRewrite $ def
-
--- Tries to apply all given multiset-only rules, regardless of the current multiset state.
--- Gives back the def if it was applied
--- applyMultisetDefs :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
--- applyMultisetDefs defs =
---     case filter isMultisetDef defs of 
---         [] -> pure Nothing
---         bagDef:_ -> do
---             modifyRuntimeMultiset (MS.grabManyRaw (defWantsFromBag bagDef)) -- TODO: pattern fun
---             modifyRuntimeMultiset (MS.putMany (defPutsInBag bagDef)) -- TODO: pattern fun
---             pure $ Just bagDef 
-
--- Filters a list of defs down to only those which are satisfied by the current state of the multiset
--- filterByMultiset :: Monad m => [EatenDef] -> RuntimeTV m [EatenDef]
--- filterByMultiset defs = do
---     pocket <- gets runtimeMultiset 
---     pure $ filter (ok pocket) defs
---     where 
---         ok :: MS.Multiset (Tree RValue) -> EatenDef -> Bool
---         ok ms def = MS.allInside (defWantsFromBag def) ms
-
-
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head
@@ -258,11 +187,6 @@ runStep = do
     when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
     pure (rulesApplied, atTop)
         where
-            -- True if the EatenDef has the same pattern as the tree
-            -- patternDefEq :: Tree RValue -> EatenDef -> Bool
-            -- patternDefEq pat1 def = case defToRewrite def of
-            --     Nothing -> True
-            --     Just (Rewrite pat2 _) -> pat1 /= pat2 
             -- Apply matching conditions from a definition according to a given runtime.
             -- False if we fail to apply a condition. True if they all apply.
             tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply

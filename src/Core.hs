@@ -5,7 +5,7 @@ module Core where
 import qualified Data.Text as T
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT, execStateT, evalStateT )
+import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU

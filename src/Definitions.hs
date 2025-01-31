@@ -39,10 +39,7 @@ isMultisetPush (MultisetPush _) = True
 isMultisetPush _ = False
 
 
--- What types of definition are there?
--- data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
---               | MultisetDef UseCount MultisetAction
---               | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue] deriving (Eq)
+-- Rosin rule definition type
 data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect] deriving (Eq)
 
 defUseCount :: EatenDef -> UseCount
