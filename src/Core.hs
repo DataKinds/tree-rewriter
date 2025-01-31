@@ -374,18 +374,3 @@ betaReduce (Leaf (RString pstr)) = do
     regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . binderRegexBindings)
     pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr regexBindings
 betaReduce (Leaf pval) = pure [Leaf pval]
-
-
--- Try applying a rewrite rule at the tip of the tree.
--- Evaluates to the new trees and whether we matched the rewrite rule
-apply :: Tree RValue -> Rewrite RValue -> IO ([Tree RValue], Bool)
-apply rval rw@(Rewrite pattern template) = let (success, binder) = runIdentity $ runStateT go emptyBinder 
-    in if success then do
-    -- We found a match! Let's inject the variables 
-        (treeLists, _) <- runStateT (mapM betaReduce template) binder
-        pure (concat treeLists, True)
-    else pure ([rval], False) -- We failed to find a match, let's give our input back unchanged
-    where
-        go :: Binder_ Bool
-        go = tryApply (Rules [rw]) rval pattern
-             -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
