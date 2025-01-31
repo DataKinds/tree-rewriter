@@ -42,6 +42,9 @@ defUseCount (EatenDef uc _ _) = uc
 defMatchCondition :: EatenDef -> [MatchCondition]
 defMatchCondition (EatenDef _ mcs _) = mcs
 
+defMatchEffect :: EatenDef -> [MatchEffect]
+defMatchEffect (EatenDef _ _ mes) = mes
+
 instance Show EatenDef where
     show (EatenDef useCount matchConds matchEffs) = case (touchesSet, touchesTree) of 
         (True, False) -> unwords [setPats, setOp]

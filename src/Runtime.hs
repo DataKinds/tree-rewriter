@@ -10,7 +10,7 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, mapStateT, get)
+import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, mapStateT, get, put)
 import Control.Monad (unless, when, void)
 import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe, listToMaybe, isNothing)
 import qualified Data.Map as M
@@ -22,11 +22,12 @@ import System.FilePath (makeRelative, (</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
 import Debug.Trace (trace)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition)
+import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition, defMatchEffect)
 import Core (BinderT)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Data.List (findIndex)
+import Control.Applicative (Alternative(empty))
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -167,11 +168,13 @@ applyMatchCondition (TreePattern pat) r = let
         -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
 
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
-applyMatchEffect :: MatchEffect -> BinderT (RuntimeTV IO) ()
-applyMatchEffect (MultisetPush ms) = lift $ modifyRuntimeMultiset (MS.putMany ms)
+applyMatchEffect :: MatchEffect -> RuntimeTV (BinderT IO) ()
+applyMatchEffect (MultisetPush ms) = modifyRuntimeMultiset (MS.putMany ms)
 applyMatchEffect (TreeReplacement template) = do
-    rewritten <- mapStateT liftIO $ mapM betaReduce template
-    lift $ modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
+    binder <- lift get
+    let rewriteAction = mapM betaReduce template `runStateT` binder
+    (rewritten, _) <- liftIO rewriteAction
+    modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
 -- Tries to apply all given rules at the focus of the runtime zipper, regardless of the current multiset state.
 -- Gives back a rule if it was applied. May mutate the zipper AND the multiset state.
@@ -237,7 +240,7 @@ runStep = do
     onceDefs <- gets runtimeSingleUseRules -- >>= filterByMultiset
     repeatDefs <- gets runtimeRules -- >>= filterByMultiset
     -- Grab the first single use rule that satisfies all conditions
-    tryDefinitions onceDefs 
+    get >>= applyFirstMatchingDefinition onceDefs 
     -- Apply single use tree rewriting rules
     maybeTreeRewrite <- applyTreeDefs onceDefs
     when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
@@ -264,24 +267,43 @@ runStep = do
     pure (rulesApplied, atTop)
         where
             -- True if the EatenDef has the same pattern as the tree
-            patternDefEq :: Tree RValue -> EatenDef -> Bool
-            patternDefEq pat1 def = case defToRewrite def of
-                Nothing -> True
-                Just (Rewrite pat2 _) -> pat1 /= pat2 
+            -- patternDefEq :: Tree RValue -> EatenDef -> Bool
+            -- patternDefEq pat1 def = case defToRewrite def of
+            --     Nothing -> True
+            --     Just (Rewrite pat2 _) -> pat1 /= pat2 
+            -- Apply matching conditions from a definition according to a given runtime.
+            -- False if we fail to apply a condition. True if they all apply.
             tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
             tryBindConditions [] _ = pure True
             tryBindConditions (cond:xs) r = do
                 success <- applyMatchCondition cond r
                 go <- tryBindConditions xs r
                 pure $ success && go
+            -- Apply matching conditions from a list of definitions.
+            -- Gives back the first definition where every condition matched, if it exists.
             tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
             tryDefinitions defs r = let 
                 bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
                 binded = second (`runState` emptyBinder) <$> bindActions
                 success = find (fst.snd) binded
-                in pure (fst <$> success)
-
-
+                in do 
+                    maybe empty (put . snd . snd) success
+                    pure (fst <$> success)
+            -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
+            applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
+            applyFirstMatchingDefinition defs = do
+                runtime <- get
+                let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
+                case matchedDef of
+                    Just def -> let
+                            matchAction = mapM_ applyMatchEffect . defMatchEffect $ def
+                            bang = (`runStateT` binder) $ runStateT matchAction runtime -- TODO: brother...
+                        in do 
+                            ((_, runtime'), _) <- liftIO bang
+                            put runtime'
+                            pure $ Just def
+                    Nothing -> pure Nothing
+                                
 
 -- Run `runStep` until there's no point...
 fixStep :: RuntimeT IO
