@@ -9,9 +9,10 @@
         ((apple pear) |)
         ((pear orange)|)
         ((peach)|)
+        (@ bag)
     )
     We expect (
-        ((pear orange)|)
+        ((pear orange))
     ))
 
 (Test a "Plain terms can be parsed and consumed"
@@ -26,3 +27,14 @@
     We expect ())
 
 (1|3 & hello~world)
+
+
+
+
+
+
+(hello |)
+(| hello)
+((grape orange apple) |)
+((orange apple) | fruit-salad)
+(@ bag) ----> (fruit-salad grape)

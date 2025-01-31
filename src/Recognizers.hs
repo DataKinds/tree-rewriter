@@ -11,7 +11,7 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..))
+import Core (Tree (..), RValue (..), unbranch)
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 
@@ -35,23 +35,27 @@ acceptOp (Leaf _) = Nothing
 recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing
 recognizeDef (Branch trees) = case trees of
+    -- TODO: support no pat, support no effect, all combinations here
     pat:(acceptOp -> Just (opType, useCount)):effect:(LeafSym "&"):pat':(acceptOp -> Just (opType', useCount')):effects' -> 
         let useCombo = if useCount == UseMany || useCount' == UseMany then UseMany else UseOnce
-        in pure $ EatenDef useCombo [matchCond opType pat, matchCond opType' pat'] [matchEff opType [effect], matchEff opType effects']
+        in pure $ EatenDef useCombo [matchCond opType pat, matchCond opType' pat'] $ matchEff opType (Just pat) [effect] ++ matchEff opType (Just pat') effects'
     pat:(acceptOp -> Just (opType, useCount)):effects -> 
-        pure $ EatenDef useCount [matchCond opType pat] [matchEff opType effects]
+        pure $ EatenDef useCount [matchCond opType pat] (matchEff opType (Just pat) effects)
     (acceptOp -> Just (opType, useCount)):effects -> 
-        pure $ EatenDef useCount [] [matchEff opType effects]
+        pure $ EatenDef useCount [] (matchEff opType Nothing effects)
     pat:[acceptOp -> Just (opType, useCount)] -> 
         pure $ EatenDef useCount [matchCond opType pat] []
     _ -> Nothing
     where
+        pushTheseTerms :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
+        pushTheseTerms nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
         matchCond :: DefOpType -> Tree RValue -> MatchCondition
         matchCond TreeOp = TreePattern
-        matchCond SetOp = MultisetPattern
-        matchEff :: DefOpType -> [Tree RValue] -> MatchEffect
-        matchEff TreeOp = TreeReplacement
-        matchEff SetOp = MultisetPush . MS.fromList . map (,1)
+        matchCond SetOp = MultisetPattern . pushTheseTerms 1 . pure
+        matchEff :: DefOpType -> Maybe (Tree RValue) -> [Tree RValue] -> [MatchEffect]
+        matchEff TreeOp _ = pure . TreeReplacement
+        matchEff SetOp Nothing = pure . MultisetPush . pushTheseTerms 1
+        matchEff SetOp (Just matchedPat) = \effs -> MultisetPush <$> [pushTheseTerms 1 effs, pushTheseTerms (-1) [matchedPat]]
 
 
 -- Built in rules parsed from the input tree!

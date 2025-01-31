@@ -160,7 +160,7 @@ hoistState = state . runState
 applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
 applyMatchCondition (MultisetPattern ms) r = let
     pocket = runtimeMultiset r
-    in pure $ MS.allInside (MS.fromList . map (,1) . unbranch $ ms) pocket -- TODO: pattern match!
+    in pure $ MS.allInside ms pocket -- TODO: pattern match!
 applyMatchCondition (TreePattern pat) r = let
     rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r

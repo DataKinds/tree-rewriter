@@ -10,10 +10,10 @@ import qualified Multiset as MS
 data UseCount = UseOnce | UseMany deriving (Show, Eq)
 
 -- What's required for this definition to match?
-data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (Tree RValue) deriving (Eq)
+data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (Tree RValue)) deriving (Eq)
 instance Show MatchCondition where
     show (TreePattern t) = sexprprint t
-    show (MultisetPattern t) = sexprprint t
+    show (MultisetPattern t) = show t
 
 isTreePattern :: MatchCondition -> Bool
 isTreePattern (TreePattern _) = True
