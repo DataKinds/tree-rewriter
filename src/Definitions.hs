@@ -10,7 +10,7 @@ import qualified Multiset as MS
 data UseCount = UseOnce | UseMany deriving (Show, Eq)
 
 -- What's required for this definition to match?
-data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (Tree RValue)
+data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (Tree RValue) deriving (Eq)
 instance Show MatchCondition where
     show (TreePattern t) = sexprprint t
     show (MultisetPattern t) = sexprprint t
@@ -25,16 +25,25 @@ isSetPattern _ = False
 
 
 -- What happens when a definition matches?
-data MatchEffect = TreeReplacement [Tree RValue] | MultisetPush (MS.Multiset (Tree RValue))
+data MatchEffect = TreeReplacement [Tree RValue] | MultisetPush (MS.Multiset (Tree RValue)) deriving (Eq)
 instance Show MatchEffect where
     show (TreeReplacement ts) = unwords $ sexprprint <$> ts
     show (MultisetPush ts) = show ts
+
+isTreeReplacement :: MatchEffect -> Bool
+isTreeReplacement (TreeReplacement _) = True
+isTreeReplacement _ = False
+
+isMultisetPush :: MatchEffect -> Bool
+isMultisetPush (MultisetPush _) = True
+isMultisetPush _ = False
+
 
 -- What types of definition are there?
 -- data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
 --               | MultisetDef UseCount MultisetAction
 --               | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue] deriving (Eq)
-data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect]
+data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect] deriving (Eq)
 
 defUseCount :: EatenDef -> UseCount
 defUseCount (EatenDef uc _ _) = uc
@@ -47,15 +56,17 @@ defMatchEffect (EatenDef _ _ mes) = mes
 
 instance Show EatenDef where
     show (EatenDef useCount matchConds matchEffs) = case (touchesSet, touchesTree) of 
-        (True, False) -> unwords [setPats, setOp]
-        (False, True) -> unwords [treePats, treeOp]
-        (True, True) -> unwords [treePats, treeOp, "&", setPats, setOp]
+        (True, False) -> unwords [setPats, setOp, setEffs]
+        (False, True) -> unwords [treePats, treeOp, treeEffs]
+        (True, True) -> unwords [setPats, setOp, setEffs, "&", treePats, treeOp, treeEffs]
         _ -> ""
         where
             setOp = if useCount == UseOnce then "|" else "|>"
             treeOp = if useCount == UseOnce then "~" else "~>"
             setPats = unwords . map show $ filter isSetPattern matchConds
             treePats = maybe "" show $ find isTreePattern matchConds
+            setEffs = unwords . map show $ filter isMultisetPush matchEffs
+            treeEffs = maybe "" show $ find isTreeReplacement matchEffs
             touchesSet = setPats /= ""
             touchesTree = treePats /= ""
 

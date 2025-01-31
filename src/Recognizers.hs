@@ -40,6 +40,10 @@ recognizeDef (Branch trees) = case trees of
         in pure $ EatenDef useCombo [matchCond opType pat, matchCond opType' pat'] [matchEff opType [effect], matchEff opType effects']
     pat:(acceptOp -> Just (opType, useCount)):effects -> 
         pure $ EatenDef useCount [matchCond opType pat] [matchEff opType effects]
+    (acceptOp -> Just (opType, useCount)):effects -> 
+        pure $ EatenDef useCount [] [matchEff opType effects]
+    pat:[acceptOp -> Just (opType, useCount)] -> 
+        pure $ EatenDef useCount [matchCond opType pat] []
     _ -> Nothing
     where
         matchCond :: DefOpType -> Tree RValue -> MatchCondition

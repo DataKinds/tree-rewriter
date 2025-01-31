@@ -3,7 +3,10 @@ import qualified Data.Map as M
 import Control.Monad (foldM)
 
 
-newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Show, Eq)
+newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Eq)
+
+instance (Ord a, Show a) => Show (Multiset a) where
+    show = concatMap (\(term,count) -> show term++"#"++show count) . toList
 
 fromList :: Ord a => [(a, Int)] -> Multiset a
 fromList = Multiset . M.fromListWith (+)

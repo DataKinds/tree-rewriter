@@ -239,20 +239,12 @@ runStep = do
     printZipper 2
     onceDefs <- gets runtimeSingleUseRules -- >>= filterByMultiset
     repeatDefs <- gets runtimeRules -- >>= filterByMultiset
-    -- Grab the first single use rule that satisfies all conditions
-    get >>= applyFirstMatchingDefinition onceDefs 
-    -- Apply single use tree rewriting rules
-    maybeTreeRewrite <- applyTreeDefs onceDefs
-    when (isJust maybeTreeRewrite) $ do -- A single use rule matched once, we gotta delete it!
-        let (Rewrite patternToDelete _) = fromJust maybeTreeRewrite
-        modifyRuntimeSingleUseRules (filter (patternDefEq patternToDelete))
-    -- Apply multi use tree rewriting rules
-    maybeTreeRewrite' <- applyTreeDefs repeatDefs
-    -- Apply single use multiset only rules
-    appliedMultisetDef <- applyMultisetDefs onceDefs
-    when (isJust appliedMultisetDef) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedMultisetDef))
-    -- Apply multi use multiset only rules
-    appliedMultisetDef' <- applyMultisetDefs repeatDefs
+    -- Grab the first single use rule that satisfies all conditions and apply it
+    appliedOnceRule <- applyFirstMatchingDefinition onceDefs 
+    -- A single use rule matched once, we gotta delete it!
+    when (isJust appliedOnceRule) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedOnceRule))
+    -- Grab the first multi use rule that satisfies all conditions and apply it
+    appliedRule <- applyFirstMatchingDefinition repeatDefs
 
     -- Begin 3 (I Love Laziness)
     printZipper 3
@@ -262,7 +254,7 @@ runStep = do
     -- Give back the value we use to assess termination
     printZipper 4
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    let rulesApplied = sum (bool 0 1 <$> [isJust maybeTreeRewrite, isJust maybeTreeRewrite', isJust appliedMultisetDef, isJust appliedMultisetDef'])
+    let rulesApplied = sum (bool 0 1 <$> [isJust appliedOnceRule, isJust appliedRule])
     when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
     pure (rulesApplied, atTop)
         where
@@ -287,7 +279,7 @@ runStep = do
                 binded = second (`runState` emptyBinder) <$> bindActions
                 success = find (fst.snd) binded
                 in do 
-                    maybe empty (put . snd . snd) success
+                    maybe (pure ()) (put . snd . snd) success
                     pure (fst <$> success)
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
             applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
