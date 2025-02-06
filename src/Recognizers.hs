@@ -31,6 +31,25 @@ acceptOp (Leaf (RSymbol "|>")) = Just (SetOp, UseMany)
 acceptOp (Leaf (RSymbol "|")) = Just (SetOp, UseOnce)
 acceptOp (Leaf _) = Nothing
 
+
+eatCondEffectPair :: [Tree RValue] -> Maybe (EatenDef, [Tree RValue])
+eatCondEffectPair [] = Nothing
+eatCondEffectPair [x] = Nothing
+-- eatCondEffectPair xs = case dropWhile (== Leaf (RSymbol "&")) xs of 
+--     pat:(acceptOp -> Just (opType, useCount)):effect:rest -> 
+--         pure $ EatenDef useCount [matchCond opType pat] (matchEff opType (Just pat) effects)
+-- TODO: get `effects` by takeWhile (/= '&') rest
+eatCondEffectPair (pat:(Leaf (RSymbol "~>")):rest) = 
+    pure $ EatenDef UseMany [TreePattern pat] [TreeReplacement effect]
+    where 
+        pushTheseTerms :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
+        pushTheseTerms nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
+        matchEff :: DefOpType -> Maybe (Tree RValue) -> [Tree RValue] -> [MatchEffect]
+        matchEff TreeOp _ = pure . TreeReplacement
+        matchEff SetOp Nothing = pure . MultisetPush . pushTheseTerms 1
+        matchEff SetOp (Just matchedPat) = \effs -> MultisetPush <$> [pushTheseTerms 1 effs, pushTheseTerms (-1) [matchedPat]]
+
+
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing

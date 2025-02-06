@@ -9,6 +9,10 @@ import qualified Multiset as MS
 -- is this definition single use or will it apply forever?
 data UseCount = UseOnce | UseMany deriving (Show, Eq)
 
+instance Semigroup UseCount where
+    UseOnce <> _ = UseOnce
+    UseMany <> b = b
+
 -- What's required for this definition to match?
 data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (Tree RValue)) deriving (Eq)
 instance Show MatchCondition where
@@ -41,6 +45,9 @@ isMultisetPush _ = False
 
 -- Rosin rule definition type
 data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect] deriving (Eq)
+
+instance Semigroup EatenDef where
+    (EatenDef uc mcs mes) <> (EatenDef uc' mcs' mes') = EatenDef (uc <> uc') (mcs <> mcs') (mes <> mes')
 
 defUseCount :: EatenDef -> UseCount
 defUseCount (EatenDef uc _ _) = uc
