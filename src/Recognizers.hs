@@ -31,6 +31,8 @@ acceptOp (Leaf (RSymbol "|>")) = Just (SetOp, UseMany)
 acceptOp (Leaf (RSymbol "|")) = Just (SetOp, UseOnce)
 acceptOp (Leaf _) = Nothing
 
+pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
+pocketCopies nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
 
 eatCondEffectPair :: [Tree RValue] -> Maybe (EatenDef, [Tree RValue])
 eatCondEffectPair [] = Nothing
@@ -39,15 +41,15 @@ eatCondEffectPair [x] = Nothing
 --     pat:(acceptOp -> Just (opType, useCount)):effect:rest -> 
 --         pure $ EatenDef useCount [matchCond opType pat] (matchEff opType (Just pat) effects)
 -- TODO: get `effects` by takeWhile (/= '&') rest
-eatCondEffectPair (pat:(Leaf (RSymbol "~>")):rest) = 
-    pure $ EatenDef UseMany [TreePattern pat] [TreeReplacement effect]
-    where 
-        pushTheseTerms :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
-        pushTheseTerms nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
-        matchEff :: DefOpType -> Maybe (Tree RValue) -> [Tree RValue] -> [MatchEffect]
-        matchEff TreeOp _ = pure . TreeReplacement
-        matchEff SetOp Nothing = pure . MultisetPush . pushTheseTerms 1
-        matchEff SetOp (Just matchedPat) = \effs -> MultisetPush <$> [pushTheseTerms 1 effs, pushTheseTerms (-1) [matchedPat]]
+eatCondEffectPair (pat:(Leaf (RSymbol op)):rest) = let 
+    (eff, rest') = break (/= Leaf (RSymbol "&")) rest 
+    in case op of
+        "~>" -> pure (EatenDef UseMany [TreePattern pat] [TreeReplacement eff], rest')
+        ">" -> pure (EatenDef UseOnce [TreePattern pat] [TreeReplacement eff], rest')
+        "|>" -> pure (EatenDef UseMany [MultisetPattern . pocketCopies 1 . unbranch $ pat] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) $ unbranch pat]], rest')
+        "|" -> pure (EatenDef UseOnce [MultisetPattern . pocketCopies 1 . unbranch $ pat] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) $ unbranch pat]], rest')
+        _ -> Nothing
+eatCondEffectPair _ = Nothing
 
 
 -- Given a tree, is the head of it listing out a rewrite rule?
