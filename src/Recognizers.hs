@@ -4,6 +4,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 -- {-# LANGUAGE UndecidableInstances #-}
 
 -- This module parses and matches patterns in the input tree for use in the Runtime.
@@ -11,9 +12,10 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), unbranch)
+import Core (Tree (..), RValue (..), unbranch, rebranch)
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
+import Data.Maybe (isJust, listToMaybe)
 
 
 pattern LeafSym :: T.Text -> Tree RValue
@@ -34,23 +36,20 @@ acceptOp (Leaf _) = Nothing
 pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
 pocketCopies nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
 
+-- Read a definition from a stream of tree tokens
 eatCondEffectPair :: [Tree RValue] -> Maybe (EatenDef, [Tree RValue])
 eatCondEffectPair [] = Nothing
-eatCondEffectPair [x] = Nothing
--- eatCondEffectPair xs = case dropWhile (== Leaf (RSymbol "&")) xs of 
---     pat:(acceptOp -> Just (opType, useCount)):effect:rest -> 
---         pure $ EatenDef useCount [matchCond opType pat] (matchEff opType (Just pat) effects)
--- TODO: get `effects` by takeWhile (/= '&') rest
-eatCondEffectPair (pat:(Leaf (RSymbol op)):rest) = let 
-    (eff, rest') = break (/= Leaf (RSymbol "&")) rest 
-    in case op of
-        "~>" -> pure (EatenDef UseMany [TreePattern pat] [TreeReplacement eff], rest')
-        ">" -> pure (EatenDef UseOnce [TreePattern pat] [TreeReplacement eff], rest')
-        "|>" -> pure (EatenDef UseMany [MultisetPattern . pocketCopies 1 . unbranch $ pat] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) $ unbranch pat]], rest')
-        "|" -> pure (EatenDef UseOnce [MultisetPattern . pocketCopies 1 . unbranch $ pat] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) $ unbranch pat]], rest')
-        _ -> Nothing
-eatCondEffectPair _ = Nothing
-
+eatCondEffectPair [_] = Nothing
+eatCondEffectPair candidate = let 
+    (condOpEff, andRest) = break (== Leaf (RSymbol "&")) candidate 
+    (cond, opEff) = break (isJust . acceptOp) condOpEff
+    eff = dropWhile (isJust . acceptOp) opEff
+    rest = dropWhile (== Leaf (RSymbol "&")) andRest
+    in listToMaybe opEff >>= acceptOp >>= \case 
+        (TreeOp, nUse) -> 
+            pure (EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff], rest)
+        (SetOp, nUse) -> 
+            pure (EatenDef nUse [MultisetPattern . pocketCopies 1 $ cond] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) cond]], rest)
 
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe EatenDef

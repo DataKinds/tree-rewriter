@@ -110,6 +110,11 @@ unbranch :: Tree RValue -> [Tree RValue]
 unbranch (Branch trees) = trees
 unbranch leaf = [leaf]
 
+-- Rewraps a list of trees into one tree, dropping unnecesary nesting
+rebranch :: [Tree RValue] -> Tree RValue
+rebranch [t] = t
+rebranch ts = Branch ts
+
 prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
     where
