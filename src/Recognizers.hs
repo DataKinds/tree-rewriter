@@ -16,6 +16,9 @@ import Core (Tree (..), RValue (..), unbranch, rebranch)
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe)
+import Control.Applicative (Alternative(many, some))
+import Control.Monad (foldM)
+import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
 
 
 pattern LeafSym :: T.Text -> Tree RValue
@@ -37,46 +40,36 @@ pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
 pocketCopies nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
 
 -- Read a definition from a stream of tree tokens
-eatCondEffectPair :: [Tree RValue] -> Maybe (EatenDef, [Tree RValue])
-eatCondEffectPair [] = Nothing
-eatCondEffectPair [_] = Nothing
+eatCondEffectPair :: [Tree RValue] -> Writer EatenDef [Tree RValue]
+eatCondEffectPair [] = pure []
+eatCondEffectPair [_] = pure []
 eatCondEffectPair candidate = let 
     (condOpEff, andRest) = break (== Leaf (RSymbol "&")) candidate 
     (cond, opEff) = break (isJust . acceptOp) condOpEff
     eff = dropWhile (isJust . acceptOp) opEff
     rest = dropWhile (== Leaf (RSymbol "&")) andRest
-    in listToMaybe opEff >>= acceptOp >>= \case 
-        (TreeOp, nUse) -> 
-            pure (EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff], rest)
-        (SetOp, nUse) -> 
-            pure (EatenDef nUse [MultisetPattern . pocketCopies 1 $ cond] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) cond]], rest)
+    in case listToMaybe opEff >>= acceptOp of  
+        Just (TreeOp, nUse) -> do
+            tell $ EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff]
+            pure rest
+        Just (SetOp, nUse) -> do
+            tell $ EatenDef nUse [MultisetPattern . pocketCopies 1 $ cond] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) cond]]
+            pure rest
+        Nothing -> pure []
+
+-- Rerun an action from an initial state until it produces an empty list
+deplete :: (Monad m) => ([a] -> m [a]) -> [a] -> m ()
+deplete f x = f x >>= go
+    where 
+        go [] = pure ()
+        go st = deplete f st
 
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing
-recognizeDef (Branch trees) = case trees of
-    -- TODO: support no pat, support no effect, all combinations here
-    pat:(acceptOp -> Just (opType, useCount)):effect:(LeafSym "&"):pat':(acceptOp -> Just (opType', useCount')):effects' -> 
-        let useCombo = if useCount == UseMany || useCount' == UseMany then UseMany else UseOnce
-        in pure $ EatenDef useCombo [matchCond opType pat, matchCond opType' pat'] $ matchEff opType (Just pat) [effect] ++ matchEff opType (Just pat') effects'
-    pat:(acceptOp -> Just (opType, useCount)):effects -> 
-        pure $ EatenDef useCount [matchCond opType pat] (matchEff opType (Just pat) effects)
-    (acceptOp -> Just (opType, useCount)):effects -> 
-        pure $ EatenDef useCount [] (matchEff opType Nothing effects)
-    pat:[acceptOp -> Just (opType, useCount)] -> 
-        pure $ EatenDef useCount [matchCond opType pat] []
-    _ -> Nothing
-    where
-        pushTheseTerms :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
-        pushTheseTerms nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
-        matchCond :: DefOpType -> Tree RValue -> MatchCondition
-        matchCond TreeOp = TreePattern
-        matchCond SetOp = MultisetPattern . pushTheseTerms 1 . pure
-        matchEff :: DefOpType -> Maybe (Tree RValue) -> [Tree RValue] -> [MatchEffect]
-        matchEff TreeOp _ = pure . TreeReplacement
-        matchEff SetOp Nothing = pure . MultisetPush . pushTheseTerms 1
-        matchEff SetOp (Just matchedPat) = \effs -> MultisetPush <$> [pushTheseTerms 1 effs, pushTheseTerms (-1) [matchedPat]]
-
+recognizeDef (Branch trees) = let
+    ingestedDef = execWriter $ deplete eatCondEffectPair trees
+    in if ingestedDef == mempty then Nothing else Just ingestedDef
 
 -- Built in rules parsed from the input tree!
 data BuiltinRule = BuiltinRule {

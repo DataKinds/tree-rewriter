@@ -13,6 +13,9 @@ instance Semigroup UseCount where
     UseOnce <> _ = UseOnce
     UseMany <> b = b
 
+instance Monoid UseCount where
+    mempty = UseMany -- identity of <>
+
 -- What's required for this definition to match?
 data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (Tree RValue)) deriving (Eq)
 instance Show MatchCondition where
@@ -48,6 +51,9 @@ data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect] deriving (Eq)
 
 instance Semigroup EatenDef where
     (EatenDef uc mcs mes) <> (EatenDef uc' mcs' mes') = EatenDef (uc <> uc') (mcs <> mcs') (mes <> mes')
+
+instance Monoid EatenDef where
+    mempty = EatenDef mempty [] []
 
 defUseCount :: EatenDef -> UseCount
 defUseCount (EatenDef uc _ _) = uc
