@@ -23,6 +23,7 @@ import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (.
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
+import Data.Monoid (Any(Any))
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -125,16 +126,59 @@ thrd (_,_,c) = c
 hoistState :: (Monad m) => State s a -> StateT s m a
 hoistState = state . runState
 
+-- Apply matching conditions from a definition according to a given runtime.
+-- False if we fail to apply a condition. True if they all apply.
+tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
+tryBindConditions [] _ = pure True
+tryBindConditions (cond:xs) r = do
+    success <- applyMatchCondition cond r
+    go <- tryBindConditions xs r
+    pure $ success && go
+
+-- Apply matching conditions from a list of definitions.
+-- Gives back the first definition where every condition matched, if it exists.
+tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
+tryDefinitions defs r = let 
+    bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
+    binded = second (`runState` emptyBinder) <$> bindActions
+    success = find (fst.snd) binded
+    in do 
+        maybe (pure ()) (put . snd . snd) success
+        pure (fst <$> success)
+
+-- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
+-- Gives back the first definition where every condition matched, if it exists.
+tryDefinitionsAt :: [EatenDef] -> Runtime -> Tree RValue -> Binder_ (Maybe EatenDef)
+tryDefinitionsAt defs r subject = let
+    r' = updateRuntimeZipper (`Z.put` subject) r
+    in tryDefinitions defs r'
+
+-- Try binding variables associated with a match condition against a specific tree that isn't the zipper's focus,
+-- or fail out and return False
+-- applyMatchConditionAt :: MatchCondition -> Runtime -> Tree RValue -> Binder_ Bool
+-- applyMatchConditionAt ms@(MultisetPattern _) r _ = applyMatchCondition ms r
+-- applyMatchConditionAt (TreePattern pat) r subject = let
+--     rules = runtimeRules r
+--     eagerMatcherAction = tryDefinitionsAt rules r
+--     in do
+--         binding <- get
+--         let eagerMatcher = flip runState binding <$> eagerMatcherAction 
+--         hoistState $ tryApply (isJust . fst . eagerMatcher) subject pat
+
 -- Bind variables associated with a match condition, or fail out and return False
 applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
 applyMatchCondition (MultisetPattern ms) r = let
     pocket = runtimeMultiset r
     in pure $ MS.allInside ms pocket -- TODO: pattern match!
-applyMatchCondition (TreePattern pat) r = let
+applyMatchCondition (TreePattern pat) r = get >>= \binding -> let
     rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r
-    in hoistState $ tryApply (const (Rules []) rules) subject pat
-        -- TODO: First arg to tryApply breaks eager evaluation -- we gotta do it at the Definition level I think
+    -- construct the eager matcher
+    eagerMatcherStep = isJust . fst . flip runState binding <$> tryDefinitionsAt rules r 
+    eagerMatcher = fmap Any . eagerMatcherStep -- TODO: map and traverse won't work as they work on the leaf types
+                                               -- TODO: write a function that does tree search like :: (Semigroup b) => Tree a -> (Tree a -> b) -> b
+    in hoistState $ tryApply (isJust . fst . eagerMatcher) subject pat
+            -- TODO: tryApply expects this eagerMatcher to do a search..
 
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
 applyMatchEffect :: MatchEffect -> RuntimeTV (BinderT IO) ()
@@ -172,24 +216,6 @@ applyDefs = do
     printLog $ "Repeat applied: " ++ show appliedRule
     pure $ sum (bool 0 1 <$> [isJust appliedOnceRule, isJust appliedRule])
         where
-            -- Apply matching conditions from a definition according to a given runtime.
-            -- False if we fail to apply a condition. True if they all apply.
-            tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
-            tryBindConditions [] _ = pure True
-            tryBindConditions (cond:xs) r = do
-                success <- applyMatchCondition cond r
-                go <- tryBindConditions xs r
-                pure $ success && go
-            -- Apply matching conditions from a list of definitions.
-            -- Gives back the first definition where every condition matched, if it exists.
-            tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
-            tryDefinitions defs r = let 
-                bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
-                binded = second (`runState` emptyBinder) <$> bindActions
-                success = find (fst.snd) binded
-                in do 
-                    maybe (pure ()) (put . snd . snd) success
-                    pure (fst <$> success)
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
             applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
             applyFirstMatchingDefinition defs = do

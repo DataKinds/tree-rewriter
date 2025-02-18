@@ -239,14 +239,14 @@ instance Show Rules where
 
 -- ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: Rules                                   -- All the rewrite rules known in the environment, for eager matching alone TODO: make this more ergonomic?
+tryApply :: (Tree RValue -> Bool)                   -- Eager matcher: does a given tree match anything else?
          -> Tree RValue                             -- Input tree
          -> Tree RValue                             -- Pattern to match
-         -> Binder_ Bool -- Updated variable bindings, along with whether the match succeeded
+         -> Binder_ Bool                            -- Updated variable bindings, along with whether the match succeeded
 -- Bind pattern variables and special accumulators
-tryApply rules rval (Leaf (RVariable pvar)) = do
+tryApply submatcher rval (Leaf (RVariable pvar)) = do
     -- Check for submatches and fail out if we're matching an eager variable 
-    if pvarEager pvar && bfsPatterns rval rules
+    if pvarEager pvar && submatcher rval
         then pure False
         else go
     where
@@ -269,18 +269,14 @@ tryApply rules rval (Leaf (RVariable pvar)) = do
                SAOutput -> addTreeBinding pvar rval >> pure True
                -- input accumulator
                SAInput -> error "Unimplemented input accumulator :?<"
-               -- cons to sexpr (pack) eager accumulator 
-               SAPack -> if bfsPatterns rval rules
-                       then pure False
-                       else (addTreeBinding pvar . deepFlatten $ case rval of
+               -- cons to sexpr (pack) accumulator 
+               SAPack -> (addTreeBinding pvar . deepFlatten $ case rval of
                            Leaf r -> [Leaf r]
                            Branch rs -> rs) >> pure True
-               -- sexpr to cons (unpack) eager accumulator 
+               -- sexpr to cons (unpack) accumulator 
                SAUnpack -> case rval of
                    Leaf _ -> pure False
-                   Branch rs -> if bfsPatterns rval rules
-                       then pure False
-                       else (addTreeBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs) >> pure True
+                   Branch rs -> (addTreeBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs) >> pure True
            -- Bind regular pattern variable
            | otherwise = bindIfEqual pvar rval
 -- Match ntree branch patterns exactly
@@ -324,26 +320,26 @@ fst3 (a,_,_)=a
 
 -- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
 -- On a successful rule match, the state holds the pattern variable bindings and we give back the matched rewrite rule
-searchPatterns :: Tree RValue -> Rules -> BinderT Maybe (Rewrite RValue)
-searchPatterns rval rr@(Rules rules) = let
-    ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
-    ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
-    in case find (fst . snd) ruleAttempts of
-        Just (matchedRule, (_, binding)) -> put binding >> pure matchedRule
-        Nothing -> lift Nothing
+-- searchPatterns :: Tree RValue -> Rules -> BinderT Maybe (Rewrite RValue)
+-- searchPatterns rval rr@(Rules rules) = let
+--     ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
+--     ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
+--     in case find (fst . snd) ruleAttempts of
+--         Just (matchedRule, (_, binding)) -> put binding >> pure matchedRule
+--         Nothing -> lift Nothing
 
 -- BFS the input tree to try applying all rewrite rules anywhere it's possible. Doesn't do any rewriting, just checks if
 -- a given set of rules would match anywhere in an input tree. Used in eager matching.
-bfsPatterns :: Tree RValue -> Rules -> Bool
-bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
-    Just _ -> True
-    Nothing -> case rval of
-        -- We failed to match a nub branch
-        Branch [] -> False
-        -- We failed to match a single runtime value
-        Leaf _ -> False
-        -- We failed to match an inhabited branch, let's BFS
-        Branch rtrees -> any (`bfsPatterns` rules) rtrees
+-- bfsPatterns :: Tree RValue -> Rules -> Bool
+-- bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
+--     Just _ -> True
+--     Nothing -> case rval of
+--         -- We failed to match a nub branch
+--         Branch [] -> False
+--         -- We failed to match a single runtime value
+--         Leaf _ -> False
+--         -- We failed to match an inhabited branch, let's BFS
+--         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 betaReduce :: Tree RValue -> BinderT IO [Tree RValue]
