@@ -22,6 +22,7 @@ import Data.Bool (bool)
 import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition, defMatchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
+import Multiset (cleanUp)
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -231,6 +232,7 @@ runStep = do
 
     -- Begin 2
     rulesApplied <- fixApplyDefs
+    modifyRuntimeMultiset cleanUp
 
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)

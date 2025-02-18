@@ -43,3 +43,6 @@ grabManyRaw xns ms = Multiset $ M.unionWith (-) (unmultiset ms) (unmultiset xns)
 -- Put this many copies of these elements into our multiset
 putMany :: Ord a => Multiset a -> Multiset a -> Multiset a
 putMany xns ms = Multiset $ M.unionWith (+) (unmultiset xns) (unmultiset ms)
+
+cleanUp :: Ord a => Multiset a -> Multiset a
+cleanUp = Multiset . M.filter (/= 0) . unmultiset
