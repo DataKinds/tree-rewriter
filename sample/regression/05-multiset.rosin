@@ -9,29 +9,21 @@
         (@ bag)
     )
     We expect (
-        ((pear orange))
+        ((orange 1))
     ))
+    
+(orange |)
 
-(Test a "Plain terms can be parsed and consumed"
+(Test a "Mix and match paren nested terms, use recency priority"
     Given (
-        ((pomme pomegranate) |> weird-fruit-salad)
-        (|pomme)
-        (|pomegranate)
-        (|(pomme pomegranate))
-        (weird-fruit-salad|)
-        (weird-fruit-salad |)
+        (lettuce | boring-salad)
+        (croutons lettuce | caesar-salad)
+        ((tomato egg bacon lettuce) | cobb-salad)
+        (| (tomato egg))
+        (| bacon croutons)
+        (| (lettuce))
+        (@ bag)
     )
-    We expect ())
-
-(1|3 & hello~world)
-
-
-
-
-
-
-(hello |)
-(| hello)
-((grape orange apple) |)
-((orange apple) | fruit-salad)
-(@ bag) ----> (fruit-salad grape)
+    We expect (
+        ((cobb-salad 1) (croutons 1))
+    ))
