@@ -1,0 +1,7 @@
+(lettuce | boring-salad)
+(croutons lettuce | caesar-salad)
+((tomato egg bacon lettuce) | cobb-salad)
+(| (tomato egg))
+(| bacon croutons)
+(| (lettuce))
+(@ bag)

@@ -15,7 +15,7 @@ import qualified Data.Text as T
 import Core (Tree (..), RValue (..), unbranch, rebranch)
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
-import Data.Maybe (isJust, listToMaybe)
+import Data.Maybe (isJust, listToMaybe, catMaybes)
 import Control.Applicative (Alternative(many, some))
 import Control.Monad (foldM)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
@@ -53,7 +53,9 @@ eatCondEffectPair candidate = let
             tell $ EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff]
             pure rest
         Just (SetOp, nUse) -> do
-            tell $ EatenDef nUse [MultisetPattern . pocketCopies 1 $ cond] [MultisetPush t | t <- [pocketCopies 1 eff, pocketCopies (-1) cond]]
+            let pat = if null cond then [] else [MultisetPattern . pocketCopies 1 $ cond]
+            let pushes = catMaybes [if null eff then Nothing else Just $ pocketCopies 1 eff, if null cond then Nothing else Just $ pocketCopies (-1) cond]
+            tell $ EatenDef nUse pat (MultisetPush <$> pushes)
             pure rest
         Nothing -> pure []
 

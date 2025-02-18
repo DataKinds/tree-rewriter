@@ -144,48 +144,31 @@ applyMatchEffect (TreeReplacement template) = do
     (rewritten, _) <- liftIO rewriteAction
     modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
--- Carry out one step of Rosin's execution. This essentially carries out the following:
---   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
---   2) We try to apply our rewrite rules at the current rewrite head
---   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
--- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
-runStep :: RuntimeTV IO (Int, Bool)
-runStep = do
-    verbose <- gets runtimeVerbose
-    let printZipper n = when verbose $ do
-            zipper <- gets runtimeZipper
-            lift $ putStr (show n ++ ": ")
-            lift $ print zipper
-    when verbose (lift $ putStrLn "== STARTING STEP ==")
+-- Runtime debug printing functions
+printZipper n = gets runtimeVerbose >>= \v -> when v $ do
+    zipper <- gets runtimeZipper
+    lift $ putStr (show n ++ ": ")
+    lift $ print zipper
+printLog l = gets runtimeVerbose >>= \v -> when v . lift . putStrLn $ l
 
-    -- Begin 1
-    printZipper 1 
-    eatDef 
-    printZipper 1.5
-    eatBuiltin
-
-    -- Begin 2
-    printZipper 2
-    onceDefs <- gets runtimeSingleUseRules -- >>= filterByMultiset
-    repeatDefs <- gets runtimeRules -- >>= filterByMultiset
+-- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
+applyDefs :: RuntimeTV IO Int
+applyDefs = do
+    onceDefs <- gets runtimeSingleUseRules
+    repeatDefs <- gets runtimeRules
+    printLog $ "Once defs: " ++ show onceDefs
+    printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
+    pocket <- gets runtimeMultiset
+    printLog $ "Pocket: " ++ show pocket
     appliedOnceRule <- applyFirstMatchingDefinition onceDefs 
+    printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
     when (isJust appliedOnceRule) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedOnceRule))
     -- Grab the first multi use rule that satisfies all conditions and apply it
     appliedRule <- applyFirstMatchingDefinition repeatDefs
-
-    -- Begin 3 (I Love Laziness)
-    printZipper 3
-    newZipper <- gets (Z.nextDfs . runtimeZipper)
-    modifyRuntimeZipper (const newZipper)
-    
-    -- Give back the value we use to assess termination
-    printZipper 4
-    atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    let rulesApplied = sum (bool 0 1 <$> [isJust appliedOnceRule, isJust appliedRule])
-    when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
-    pure (rulesApplied, atTop)
+    printLog $ "Repeat applied: " ++ show appliedRule
+    pure $ sum (bool 0 1 <$> [isJust appliedOnceRule, isJust appliedRule])
         where
             -- Apply matching conditions from a definition according to a given runtime.
             -- False if we fail to apply a condition. True if they all apply.
@@ -219,6 +202,45 @@ runStep = do
                             put runtime'
                             pure $ Just def
                     Nothing -> pure Nothing
+
+-- Run `applyDefs` until there's no point...
+fixApplyDefs :: RuntimeTV IO Int
+fixApplyDefs = do
+    count <- applyDefs
+    if count == 0 
+        then pure 0 
+        else do
+            tc <- fixApplyDefs
+            pure $ count + tc
+
+-- Carry out one step of Rosin's execution. This essentially carries out the following:
+--   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
+--   2) We try to apply our rewrite rules at the current rewrite head as many times as possible
+--   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
+-- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
+runStep :: RuntimeTV IO (Int, Bool)
+runStep = do
+    verbose <- gets runtimeVerbose
+    when verbose (lift $ putStrLn "== STARTING STEP ==")
+    printZipper "Pre-step"
+
+    -- Begin 1
+    eatDef 
+    eatBuiltin
+    printZipper "Post-eat"
+
+    -- Begin 2
+    rulesApplied <- fixApplyDefs
+
+    -- Begin 3 (I Love Laziness)
+    newZipper <- gets (Z.nextDfs . runtimeZipper)
+    modifyRuntimeZipper (const newZipper)
+    
+    -- Give back the value we use to assess termination
+    printZipper "Pre-termination"
+    atTop <- gets ((== []) . Z._Ups . runtimeZipper)
+    when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
+    pure (rulesApplied, atTop)
                                 
 
 -- Run `runStep` until there's no point...
