@@ -2,3 +2,4 @@
 ((t :desc :!got :wanted) ~> (p (❌ :desc got :got wanted :wanted)))
 ((t :desc :!val :val) ~> (p (✅ :desc :val)))
 ((Test a :desc Given :test We expect :val) ~> (t :desc :test :val))
+((defined :str) ~>)

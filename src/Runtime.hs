@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections #-}
 
 module Runtime where
-    
+
 import Core
 import qualified Zipper as Z
 import qualified Data.Text as T
@@ -13,7 +13,7 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, get, put)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust)
-import qualified Multiset as MS 
+import qualified Multiset as MS
 import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
 import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
@@ -24,6 +24,8 @@ import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
 import Data.Monoid (Any(Any))
+import Data.Semigroup (Semigroup(sconcat), Any (..))
+import Data.List.NonEmpty (NonEmpty (..), fromList)
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -39,7 +41,7 @@ data Runtime = Runtime {
     -- Where are we in the data tree?
     runtimeZipper :: Z.Zipper RValue,
     -- Multiset state!
-    runtimeMultiset :: MS.Multiset (Tree RValue) 
+    runtimeMultiset :: MS.Multiset (Tree RValue)
 } deriving (Show)
 type RuntimeTV m = StateT Runtime m
 type RuntimeT m = RuntimeTV m ()
@@ -79,7 +81,7 @@ addSingleUseRule rule = modifyRuntimeSingleUseRules (rule:)
 eatDef :: Monad m => RuntimeT m
 eatDef = do
     subject <- gets (Z.look . runtimeZipper)
-    case recognizeDef subject of 
+    case recognizeDef subject of
         -- Add the rule definition to the runtime and snip it out from the input tree
         Just td -> case defUseCount td of
             UseOnce -> do
@@ -116,7 +118,7 @@ dispatchBuiltin args = \case
 eatBuiltin :: RuntimeT IO
 eatBuiltin = do
     subject <- gets (Z.look . runtimeZipper)
-    case recognizeBuiltin subject of 
+    case recognizeBuiltin subject of
         Just (BuiltinRule name args) -> dispatchBuiltin args name
         Nothing -> pure ()
 
@@ -138,11 +140,11 @@ tryBindConditions (cond:xs) r = do
 -- Apply matching conditions from a list of definitions.
 -- Gives back the first definition where every condition matched, if it exists.
 tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
-tryDefinitions defs r = let 
+tryDefinitions defs r = let
     bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
     binded = second (`runState` emptyBinder) <$> bindActions
     success = find (fst.snd) binded
-    in do 
+    in do
         maybe (pure ()) (put . snd . snd) success
         pure (fst <$> success)
 
@@ -153,17 +155,10 @@ tryDefinitionsAt defs r subject = let
     r' = updateRuntimeZipper (`Z.put` subject) r
     in tryDefinitions defs r'
 
--- Try binding variables associated with a match condition against a specific tree that isn't the zipper's focus,
--- or fail out and return False
--- applyMatchConditionAt :: MatchCondition -> Runtime -> Tree RValue -> Binder_ Bool
--- applyMatchConditionAt ms@(MultisetPattern _) r _ = applyMatchCondition ms r
--- applyMatchConditionAt (TreePattern pat) r subject = let
---     rules = runtimeRules r
---     eagerMatcherAction = tryDefinitionsAt rules r
---     in do
---         binding <- get
---         let eagerMatcher = flip runState binding <$> eagerMatcherAction 
---         hoistState $ tryApply (isJust . fst . eagerMatcher) subject pat
+
+treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
+treeMapReduce mapper input@(Leaf _) = mapper input
+treeMapReduce mapper input@(Branch xs) = sconcat $ mapper input :| (treeMapReduce mapper <$> xs)
 
 -- Bind variables associated with a match condition, or fail out and return False
 applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
@@ -174,11 +169,12 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let
     rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r
     -- construct the eager matcher
-    eagerMatcherStep = isJust . fst . flip runState binding <$> tryDefinitionsAt rules r 
-    eagerMatcher = fmap Any . eagerMatcherStep -- TODO: map and traverse won't work as they work on the leaf types
-                                               -- TODO: write a function that does tree search like :: (Semigroup b) => Tree a -> (Tree a -> b) -> b
-    in hoistState $ tryApply (isJust . fst . eagerMatcher) subject pat
-            -- TODO: tryApply expects this eagerMatcher to do a search..
+    eagerMatcherCallStep = Any . isJust . fst . flip runState binding <$> tryDefinitionsAt rules r
+    eagerMatcherDefStep = Any . isJust . recognizeDef 
+    eagerMatcherBuiltinStep = Any . isJust . recognizeBuiltin 
+    eagerMatcherStep i = eagerMatcherCallStep i <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
+    eagerMatcher = treeMapReduce eagerMatcherStep
+    in hoistState $ tryApply (getAny . eagerMatcher) subject pat
 
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
 applyMatchEffect :: MatchEffect -> RuntimeTV (BinderT IO) ()
@@ -207,7 +203,7 @@ applyDefs = do
     -- Grab the first single use rule that satisfies all conditions and apply it
     pocket <- gets runtimeMultiset
     printLog $ "Pocket: " ++ show pocket
-    appliedOnceRule <- applyFirstMatchingDefinition onceDefs 
+    appliedOnceRule <- applyFirstMatchingDefinition onceDefs
     printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
     when (isJust appliedOnceRule) $ modifyRuntimeSingleUseRules (filter (/= fromJust appliedOnceRule))
@@ -225,7 +221,7 @@ applyDefs = do
                     Just def -> let
                             matchAction = mapM_ applyMatchEffect . defMatchEffect $ def
                             bang = (`runStateT` binder) $ runStateT matchAction runtime -- TODO: brother...
-                        in do 
+                        in do
                             ((_, runtime'), _) <- liftIO bang
                             put runtime'
                             pure $ Just def
@@ -235,8 +231,8 @@ applyDefs = do
 fixApplyDefs :: RuntimeTV IO Int
 fixApplyDefs = do
     count <- applyDefs
-    if count == 0 
-        then pure 0 
+    if count == 0
+        then pure 0
         else do
             tc <- fixApplyDefs
             pure $ count + tc
@@ -253,7 +249,7 @@ runStep = do
     printZipper "Pre-step"
 
     -- Begin 1
-    eatDef 
+    eatDef
     eatBuiltin
     printZipper "Post-eat"
 
@@ -264,18 +260,18 @@ runStep = do
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . runtimeZipper)
     modifyRuntimeZipper (const newZipper)
-    
+
     -- Give back the value we use to assess termination
     printZipper "Pre-termination"
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
     when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
     pure (rulesApplied, atTop)
-                                
+
 
 -- Run `runStep` until there's no point...
 fixStep :: RuntimeT IO
 fixStep = go 0
-    where 
+    where
         readyToStop = do
             (count, reset) <- runStep
             unless reset (if count > 0 then go count else readyToStop)
@@ -284,13 +280,13 @@ fixStep = go 0
             if reset
                 then readyToStop
                 else go $ count + count'
-            
+
 
 -- Executes a Rosin runtime
 run :: Runtime -> IO Runtime
 run = execStateT fixStep
 
-emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime 
+emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose trees = Runtime filepath verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
     where emptyRules = []
 
