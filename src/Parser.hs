@@ -86,12 +86,12 @@ pstrParser = do
 pregexParser :: RuleParser (Tree RValue)
 pregexParser = do
     flex . char $ '/'
-    parsedRegex <- regex <$> manyTill anyEscapedChar (try $ char '/')
+    parsedRegex <- regex <$> manyTill escapedSlashOrAny (try $ char '/')
     case parsedRegex of
         Right compiledRegex -> pure compiledRegex
         Left parserError -> parserFail (show parserError)
     where
-        anyEscapedChar = try (char '\\' *> anyChar) <|> anyChar
+        escapedSlashOrAny = try (char '\\' *> char '/') <|> anyChar
 
 -- parses 10 or -45 or +222
 pnumParser :: RuleParser (Tree RValue)

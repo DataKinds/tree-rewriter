@@ -1,8 +1,8 @@
 (@ parse (@ cat "t.rosin"))
 
 (Test a "Regex definition with anchors"
-    Given (/^REGEX SAYS: Hello!$/ ~> "Hello!")
-    We expect (defined "/^REGEX SAYS: Hello!$/ ~> \"Hello!\""))
+    Given (/^REGEX SAYS: H\w..o!$/ ~> "Hello!")
+    We expect (defined "/^REGEX SAYS: H\w..o!$/ ~> \"Hello!\""))
 
 (Test a "Regex apply"
     Given ("SIMON REGEX SAYS: Hello!" "REGEX SAYS: Hello!" "Unrelated string")
