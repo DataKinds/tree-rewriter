@@ -32,13 +32,11 @@ instance TH.Lift ICU.Regex where
 ------------------------------------------------------------
 
 -- Enum for special accumulators
-data SpecialAccumTag = SASum | SANegate | SAProduct | SAOutput | SAInput | SAPack | SAUnpack deriving (TH.Lift, Eq, Ord)
+data SpecialAccumTag = SASum | SANegate | SAProduct | SAPack | SAUnpack deriving (TH.Lift, Eq, Ord)
 instance Show SpecialAccumTag where
     show SASum     = "+"
     show SANegate  = "-"
     show SAProduct = "*"
-    show SAOutput  = ">"
-    show SAInput   = "<"
     show SAPack    = "@"
     show SAUnpack  = "%"
 
@@ -265,10 +263,6 @@ tryApply submatcher rval (Leaf (RVariable pvar)) = do
                SANegate -> case rval of
                    num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
                    _ -> pure False
-               -- output accumulator
-               SAOutput -> addTreeBinding pvar rval >> pure True
-               -- input accumulator
-               SAInput -> error "Unimplemented input accumulator :?<"
                -- cons to sexpr (pack) accumulator 
                SAPack -> (addTreeBinding pvar . deepFlatten $ case rval of
                            Leaf r -> [Leaf r]
@@ -318,58 +312,33 @@ tryApply _ _ _ = pure False
 fst3 :: (a, b, c) -> a
 fst3 (a,_,_)=a
 
--- Check the tip of the input tree, attempting to apply all rewrite rules at the tip. Discards existing state binding.
--- On a successful rule match, the state holds the pattern variable bindings and we give back the matched rewrite rule
--- searchPatterns :: Tree RValue -> Rules -> BinderT Maybe (Rewrite RValue)
--- searchPatterns rval rr@(Rules rules) = let
---     ruleActions = zip rules $ map (tryApply rr rval) (rewritePattern <$> rules)
---     ruleAttempts = second (`runState` emptyBinder) <$> ruleActions
---     in case find (fst . snd) ruleAttempts of
---         Just (matchedRule, (_, binding)) -> put binding >> pure matchedRule
---         Nothing -> lift Nothing
-
--- BFS the input tree to try applying all rewrite rules anywhere it's possible. Doesn't do any rewriting, just checks if
--- a given set of rules would match anywhere in an input tree. Used in eager matching.
--- bfsPatterns :: Tree RValue -> Rules -> Bool
--- bfsPatterns rval rules = case runStateT (searchPatterns rval rules) emptyBinder of
---     Just _ -> True
---     Nothing -> case rval of
---         -- We failed to match a nub branch
---         Branch [] -> False
---         -- We failed to match a single runtime value
---         Leaf _ -> False
---         -- We failed to match an inhabited branch, let's BFS
---         Branch rtrees -> any (`bfsPatterns` rules) rtrees
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
-betaReduce :: Tree RValue -> BinderT IO [Tree RValue]
+betaReduce :: Tree RValue -> Binder_ [Tree RValue]
 betaReduce (Branch trees) = do
     treeLists <- mapM betaReduce trees
     pure [Branch $ concat treeLists]
-betaReduce (Leaf (RVariable pvar)) = do
+betaReduce input@(Leaf (RVariable pvar)) = do
     pvarBinding <- getBinding pvar
     -- Handle special accumulators
     if pvarSpecialAccumAcceptor pvar
-        then lift $ goSpecialAccums pvarBinding
+        then pure $ goSpecialAccums pvarBinding
         -- Handle substitution on normal pattern variables
         else case pvarBinding of
             Just rvals -> pure $ reverse rvals
-            Nothing -> fail $ "Missing binding for variable " ++ show pvar
+            Nothing -> pure [input]
     where
-        goSpecialAccums :: Maybe [Tree RValue] -> IO [Tree RValue]
-        goSpecialAccums Nothing = pure [] -- unbound special accumulators produce nothing
+        goSpecialAccums :: Maybe [Tree RValue] -> [Tree RValue]
+        goSpecialAccums Nothing = [] -- unbound special accumulators produce nothing
         goSpecialAccums (Just rvals) = case fromJust $ pvarSpecialAccumTag pvar of
             -- sum accumulator 
-            SASum -> pure [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
+            SASum -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
             -- product accumulator 
-            SAProduct -> pure [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
+            SAProduct -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
             -- negation accumulator 
-            SANegate -> pure $ (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
-            -- output accumulator
-            SAOutput -> (putStrLn . unwords . reverse $ sexprprint <$> rvals) >> pure rvals
-            SAInput -> undefined -- TODO
+            SANegate -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
             -- other accumulators (SAPack, SAUnpack) bind like normal variables
-            _ -> pure $ reverse rvals
+            _ -> reverse rvals
 -- Perform regex capture group substitutions!
 betaReduce (Leaf (RString pstr)) = do
     regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . binderRegexBindings)

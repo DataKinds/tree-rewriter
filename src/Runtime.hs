@@ -25,6 +25,7 @@ import Data.Foldable (find)
 import Multiset (cleanUp)
 import Data.Semigroup (Semigroup(sconcat), Any (..))
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Functor.Identity (Identity(..))
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -163,8 +164,10 @@ treeMapReduce mapper input@(Branch xs) = sconcat $ mapper input :| (treeMapReduc
 applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
 applyMatchCondition (MultisetPattern ms) r = let
     pocket = runtimeMultiset r
-    in pure $ MS.allInside ms pocket -- TODO: pattern match!
-applyMatchCondition (TreePattern pat) r = get >>= \binding -> let
+    in do
+        ms' <- MS.traverseValues (fmap rebranch . betaReduce) ms
+        pure $ MS.allInside ms' pocket -- TODO: pattern match!
+applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
     rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r
     -- construct the eager matcher
@@ -176,15 +179,14 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let
     in hoistState $ tryApply (getAny . eagerMatcher) subject pat
 
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
-applyMatchEffect :: MatchEffect -> RuntimeTV (BinderT IO) ()
+applyMatchEffect :: MatchEffect -> RuntimeTV Binder_ ()
 applyMatchEffect (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap rebranch . betaReduce) ms
     modifyRuntimeMultiset (MS.putMany ms')
 applyMatchEffect (TreeReplacement []) = modifyRuntimeZipper Z.dropFocus
 applyMatchEffect (TreeReplacement template) = do
     binder <- lift get
-    let rewriteAction = mapM betaReduce template `runStateT` binder
-    (rewritten, _) <- liftIO rewriteAction
+    let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
     modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
 -- Runtime debug printing functions
@@ -224,8 +226,8 @@ applyDefs = do
                     Just def -> let
                             matchAction = mapM_ applyMatchEffect . defMatchEffect $ def
                             bang = (`runStateT` binder) $ runStateT matchAction runtime -- TODO: brother...
+                            ((_, runtime'), _) = runIdentity bang
                         in do
-                            ((_, runtime'), _) <- liftIO bang
                             put runtime'
                             pure $ Just def
                     Nothing -> pure Nothing
