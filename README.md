@@ -51,7 +51,7 @@ make test
 
 ### Template Haskell
 
-This repo does contain a Template Haskell implementation of the langugage you can embed into your programs. Use with caution, this whole repo is currently very unstable.
+This repo does contain a Template Haskell implementation of the langugage you can embed into your programs. Use with caution, this whole repo is currently very unstable. This feature is also likely going to be dropped in the coming months as the TH usecase has diverged from the standalone usecase -- the runtime here is fairly heavy.
 
 See [blob/main/src/TH.hs](blob/main/src/TH.hs) for details. `Main.hs` also contains the following:
 
@@ -103,12 +103,11 @@ These special accumulators take some sort of action on the matched values. You m
 
 
 ## Planned features
-* [x] ~~Allow all special accumulators to be used either eagerly (`!`) or non-eagerly.~~ Done!
 * [ ] Implement Input accumulator.
 * [ ] Support capture groups from multiple regex matches in one rule.
-* [ ] Support multiset state on the rewrite head.
-* [ ] Implement a few builtin rules, like `@include` for files.
-* [x] ~~Parse strings and allow regex in pattern variables which match strings.~~ Done!
+* [ ] Support variable templating on multiset matches.
+* [ ] Better [tutorial](./INTRO.md) or reference spec
+* [ ] Real code written in Rosin
 * [ ] Improved performance!
 
 ## Comparison with Modal/Thuesday
