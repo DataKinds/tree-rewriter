@@ -1,1 +1,6 @@
-(@ parse (@ cat "small.tree"))
+(/(pick up|grab|slip) (a |some )?(\w+)/ ~> & | ((grabbed $3)))
+"pick up pliers"
+"grab some bolts"
+"it's time to pick up a nut"
+"we need to slip some bolts into our pocket"
+(@ bag)

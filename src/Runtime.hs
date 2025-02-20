@@ -177,7 +177,9 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let
 
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
 applyMatchEffect :: MatchEffect -> RuntimeTV (BinderT IO) ()
-applyMatchEffect (MultisetPush ms) = modifyRuntimeMultiset (MS.putMany ms)
+applyMatchEffect (MultisetPush ms) = do
+    ms' <- lift $ MS.traverseValues (fmap rebranch . betaReduce) ms
+    modifyRuntimeMultiset (MS.putMany ms')
 applyMatchEffect (TreeReplacement []) = modifyRuntimeZipper Z.dropFocus
 applyMatchEffect (TreeReplacement template) = do
     binder <- lift get

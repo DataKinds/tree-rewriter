@@ -10,8 +10,8 @@ import qualified Multiset as MS
 data UseCount = UseOnce | UseMany deriving (Show, Eq)
 
 instance Semigroup UseCount where
-    UseOnce <> _ = UseOnce
-    UseMany <> b = b
+    UseMany <> _ = UseMany
+    UseOnce <> b = b
 
 instance Monoid UseCount where
     mempty = UseMany -- identity of <>

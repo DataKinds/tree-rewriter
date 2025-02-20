@@ -1,6 +1,8 @@
+{-# LANGUAGE TupleSections #-}
 module Multiset where
 import qualified Data.Map as M
 import Control.Monad (foldM)
+import Data.Bifunctor (Bifunctor(first))
 
 
 newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Eq)
@@ -44,5 +46,14 @@ grabManyRaw xns ms = Multiset $ M.unionWith (-) (unmultiset ms) (unmultiset xns)
 putMany :: Ord a => Multiset a -> Multiset a -> Multiset a
 putMany xns ms = Multiset $ M.unionWith (+) (unmultiset xns) (unmultiset ms)
 
+-- Forget we were holding onto something if we have none of it
 cleanUp :: Ord a => Multiset a -> Multiset a
 cleanUp = Multiset . M.filter (/= 0) . unmultiset
+
+mapValues :: (Ord a, Ord b) => (a -> b) -> Multiset a -> Multiset b 
+mapValues f = Multiset . M.mapKeys f . unmultiset  
+
+traverseValues :: (Applicative f, Ord a, Ord b) => (a -> f b) -> Multiset a -> f (Multiset b)
+traverseValues f = fmap Multiset . traverse' f . unmultiset  
+    where
+        traverse' g mp = M.fromList <$> traverse (\(val, count) -> (, count) <$> g val) (M.toList mp)
