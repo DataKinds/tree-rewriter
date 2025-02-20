@@ -23,9 +23,8 @@ import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (.
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
-import Data.Monoid (Any(Any))
 import Data.Semigroup (Semigroup(sconcat), Any (..))
-import Data.List.NonEmpty (NonEmpty (..), fromList)
+import Data.List.NonEmpty (NonEmpty (..))
 
 
 -- Runtime handles the state of the rewrite head processing the input data 
@@ -187,10 +186,12 @@ applyMatchEffect (TreeReplacement template) = do
     modifyRuntimeZipper (`Z.spliceIn` concat rewritten)
 
 -- Runtime debug printing functions
-printZipper n = gets runtimeVerbose >>= \v -> when v $ do
+printZipper :: String -> RuntimeT IO
+printZipper l = gets runtimeVerbose >>= \v -> when v $ do
     zipper <- gets runtimeZipper
-    lift $ putStr (show n ++ ": ")
+    lift $ putStr (l ++ ": ")
     lift $ print zipper
+printLog :: String -> RuntimeT IO
 printLog l = gets runtimeVerbose >>= \v -> when v . lift . putStrLn $ l
 
 -- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
