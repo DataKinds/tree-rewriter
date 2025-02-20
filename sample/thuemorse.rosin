@@ -1,0 +1,4 @@
+(thuemorse | & 0 ~> 0 1)
+(thuemorse | & 1 ~> 1 0)
+(| (thuemorse thuemorse thuemorse thuemorse thuemorse thuemorse thuemorse thuemorse thuemorse thuemorse))
+(0)

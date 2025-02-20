@@ -3,7 +3,10 @@ import qualified Data.Map as M
 import Control.Monad (foldM)
 
 
-newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Show, Eq)
+newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Eq)
+
+instance (Ord a, Show a) => Show (Multiset a) where
+    show = unwords . map  (\(term,count) -> show term++"#"++show count) . toList
 
 fromList :: Ord a => [(a, Int)] -> Multiset a
 fromList = Multiset . M.fromListWith (+)
@@ -40,3 +43,6 @@ grabManyRaw xns ms = Multiset $ M.unionWith (-) (unmultiset ms) (unmultiset xns)
 -- Put this many copies of these elements into our multiset
 putMany :: Ord a => Multiset a -> Multiset a -> Multiset a
 putMany xns ms = Multiset $ M.unionWith (+) (unmultiset xns) (unmultiset ms)
+
+cleanUp :: Ord a => Multiset a -> Multiset a
+cleanUp = Multiset . M.filter (/= 0) . unmultiset

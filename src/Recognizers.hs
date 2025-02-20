@@ -1,57 +1,25 @@
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
+-- {-# LANGUAGE UndecidableInstances #-}
 
 -- This module parses and matches patterns in the input tree for use in the Runtime.
--- Rule definitions and builtin rules are currently detected and parsed through this module.
 -- All relevant datatypes for extracting information from the input tree are also compiled here.
 module Recognizers where
 
-import qualified Multiset as MS
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), unbranch, sexprprint)
-import Data.Function (on)
+import Core (Tree (..), RValue (..), unbranch, rebranch)
+import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
+import qualified Multiset as MS
+import Data.Maybe (isJust, listToMaybe, catMaybes)
+import Control.Applicative (Alternative(many, some))
+import Control.Monad (foldM)
+import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
 
--- Recognizer datatypes! --
-
--- What action does matching this rewrite rule require on the multiset? 
-data MultisetAction = MultisetAction {
-    multisetPops :: MS.Multiset (Tree RValue),
-    multisetPushs :: MS.Multiset (Tree RValue)
-} deriving (Eq)
-instance Show MultisetAction where
-    show (MultisetAction pops pushs) = let 
-        strPops = if MS.null pops then "" else show pops
-        strPushs = if MS.null pushs then "" else show pushs
-        in concat [strPops, "|", strPushs]
-
--- is this definition single use or will it apply forever?
-data UseCount = UseOnce | UseMany deriving (Show, Eq)
-
--- What types of definition are there?
-data EatenDef = TreeDef UseCount (Tree RValue) [Tree RValue]
-              | MultisetDef UseCount MultisetAction
-              | ComboDef UseCount MultisetAction (Tree RValue) [Tree RValue] deriving (Eq)
-
-isMultisetDef :: EatenDef -> Bool
-isMultisetDef (MultisetDef _ _) = True
-isMultisetDef _ = False
-
-instance Show EatenDef where
-    show (TreeDef useCount pat templates) = let 
-        op = if useCount == UseOnce then " ~ " else " ~> "
-        in concat [sexprprint pat, op, unwords $ sexprprint <$> templates]
-    show (MultisetDef useCount multisetAction) = show multisetAction -- TODO: shows UseMany rules wrong
-    show (ComboDef useCount multisetAction pat templates) = let 
-        op = if useCount == UseOnce then " ~ " else " ~> "
-        in concat [show multisetAction, " & ", sexprprint pat, op, unwords $ sexprprint <$> templates]
-
--- Built in rules parsed from the input tree!
-data BuiltinRule = BuiltinRule {
-    builtinName :: T.Text,
-    builtinArgs :: [Tree RValue]
-}
-
--- Done with datatypes! --
 
 pattern LeafSym :: T.Text -> Tree RValue
 pattern LeafSym sym = Leaf (RSymbol sym)
@@ -59,39 +27,57 @@ pattern LeafSym sym = Leaf (RSymbol sym)
 pattern LeafStr :: T.Text -> Tree RValue
 pattern LeafStr sym = Leaf (RString sym)
 
+data DefOpType = SetOp | TreeOp
+acceptOp :: Tree RValue -> Maybe (DefOpType, UseCount)
+acceptOp (Branch _) = Nothing
+acceptOp (Leaf (RSymbol "~>")) = Just (TreeOp, UseMany)
+acceptOp (Leaf (RSymbol "~")) = Just (TreeOp, UseOnce)
+acceptOp (Leaf (RSymbol "|>")) = Just (SetOp, UseMany)
+acceptOp (Leaf (RSymbol "|")) = Just (SetOp, UseOnce)
+acceptOp (Leaf _) = Nothing
+
+pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
+pocketCopies nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
+
+-- Read a definition from a stream of tree tokens
+eatCondEffectPair :: [Tree RValue] -> Writer EatenDef [Tree RValue]
+eatCondEffectPair [] = pure []
+eatCondEffectPair [_] = pure []
+eatCondEffectPair candidate = let 
+    (condOpEff, andRest) = break (== Leaf (RSymbol "&")) candidate 
+    (cond, opEff) = break (isJust . acceptOp) condOpEff
+    eff = dropWhile (isJust . acceptOp) opEff
+    rest = dropWhile (== Leaf (RSymbol "&")) andRest
+    in case listToMaybe opEff >>= acceptOp of  
+        Just (TreeOp, nUse) -> do
+            tell $ EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff]
+            pure rest
+        Just (SetOp, nUse) -> do
+            let pat = if null cond then [] else [MultisetPattern . pocketCopies 1 $ cond]
+            let pushes = catMaybes [if null eff then Nothing else Just $ pocketCopies 1 eff, if null cond then Nothing else Just $ pocketCopies (-1) cond]
+            tell $ EatenDef nUse pat (MultisetPush <$> pushes)
+            pure rest
+        Nothing -> pure []
+
+-- Rerun an action from an initial state until it produces an empty list
+deplete :: (Monad m) => ([a] -> m [a]) -> [a] -> m ()
+deplete f x = f x >>= go
+    where 
+        go [] = pure ()
+        go st = deplete f st
+
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe EatenDef
 recognizeDef (Leaf _) = Nothing
-recognizeDef (Branch trees) = case trees of
-    pat:(LeafSym "~>"):templates -> pure $ TreeDef UseMany pat templates
-    pat:(LeafSym "~"):templates -> pure $ TreeDef UseOnce pat templates
-    (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym "~>"):templates) -> 
-        pure $ ComboDef UseMany (maFromTrees pops pushs) pat templates
-    (pops:(LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym ">"):templates) -> 
-        pure $ ComboDef UseOnce (maFromTrees pops pushs) pat templates
-    (pops:(LeafSym "|>"):[pushs]) -> pure . MultisetDef UseMany $ maFromTrees pops pushs
-    (pops:(LeafSym "|"):[pushs]) -> pure . MultisetDef UseOnce $ maFromTrees pops pushs
-    -- TODO: figure out a better way to do all these variations LOL
-    ((LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym "~>"):templates) -> 
-        pure $ ComboDef UseMany (maFromTrees (Branch []) pushs) pat templates
-    ((LeafSym "|"):pushs:(LeafSym "&"):pat:(LeafSym ">"):templates) -> 
-        pure $ ComboDef UseOnce (maFromTrees (Branch []) pushs) pat templates
-    ((LeafSym "|>"):[pushs]) -> pure . MultisetDef UseMany $ maFromTrees (Branch []) pushs
-    ((LeafSym "|"):[pushs]) -> pure . MultisetDef UseOnce $ maFromTrees (Branch []) pushs
+recognizeDef (Branch trees) = let
+    ingestedDef = execWriter $ deplete eatCondEffectPair trees
+    in if ingestedDef == mempty then Nothing else Just ingestedDef
 
-    (pops:(LeafSym "|"):(LeafSym "&"):pat:(LeafSym "~>"):templates) -> 
-        pure $ ComboDef UseMany (maFromTrees pops (Branch [])) pat templates
-    (pops:(LeafSym "|"):(LeafSym "&"):pat:(LeafSym ">"):templates) -> 
-        pure $ ComboDef UseOnce (maFromTrees pops (Branch [])) pat templates
-    (pops:[LeafSym "|>"]) -> pure . MultisetDef UseMany $ maFromTrees pops (Branch [])
-    (pops:[LeafSym "|"]) -> pure . MultisetDef UseOnce $ maFromTrees pops (Branch [])
-
-    _ -> Nothing
-    where
-        multisetFromTree :: Tree RValue -> MS.Multiset (Tree RValue)
-        multisetFromTree = MS.fromList . map (,1) . unbranch
-        maFromTrees :: Tree RValue -> Tree RValue -> MultisetAction
-        maFromTrees = MultisetAction `on` multisetFromTree
+-- Built in rules parsed from the input tree!
+data BuiltinRule = BuiltinRule {
+    builtinName :: T.Text,
+    builtinArgs :: [Tree RValue]
+}
 
 -- Given a tree, is the head of it listing out a builtin invocation?
 recognizeBuiltin :: Tree RValue -> Maybe BuiltinRule
