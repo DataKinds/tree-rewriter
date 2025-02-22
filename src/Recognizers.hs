@@ -37,7 +37,7 @@ acceptOp (Leaf (RSymbol "|")) = Just (SetOp, UseOnce)
 acceptOp (Leaf _) = Nothing
 
 pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
-pocketCopies nTimes = MS.fromList . map (,nTimes) . concatMap unbranch
+pocketCopies nTimes = MS.fromList . map (,nTimes)
 
 -- Read a definition from a stream of tree tokens
 eatCondEffectPair :: [Tree RValue] -> Writer EatenDef [Tree RValue]

@@ -14,7 +14,7 @@ instance Semigroup UseCount where
     UseOnce <> b = b
 
 instance Monoid UseCount where
-    mempty = UseMany -- identity of <>
+    mempty = UseOnce -- identity of <>
 
 -- What's required for this definition to match?
 data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (Tree RValue)) deriving (Eq, Show)

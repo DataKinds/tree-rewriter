@@ -52,8 +52,6 @@ pvarParser = try specialAccum <|> normalVar
                 [ mkAccumParser '+' SASum
                 , mkAccumParser '-' SANegate
                 , mkAccumParser '*' SAProduct
-                , mkAccumParser '>' SAOutput 
-                , mkAccumParser '<' SAInput  
                 , mkAccumParser '@' SAPack   
                 , mkAccumParser '%' SAUnpack 
                 ]
