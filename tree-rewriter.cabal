@@ -25,6 +25,7 @@ source-repository head
 library
   exposed-modules:
       Core
+      Definitions
       Multiset
       Parser
       Recognizers
@@ -39,14 +40,19 @@ library
       src
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
@@ -65,14 +71,19 @@ executable rosin
       app
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -O3 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
@@ -93,14 +104,19 @@ test-suite rosin-test
       test
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
