@@ -1,0 +1,4 @@
+((p :x) ~> (@ print :x))
+
+(p tester)
+(@ print (huaiodrh uihui hne" SKIJ"))

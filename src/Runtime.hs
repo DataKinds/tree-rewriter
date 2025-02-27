@@ -21,7 +21,7 @@ import Core
       tryApply,
       Binder_,
       RValue(RString),
-      Tree(..) )
+      Tree(..), tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -91,13 +91,22 @@ eatDef = do
                 modifying #zipper (`Z.put` branch [sym "defined", str $ show td])
         Nothing -> pure ()
 
--- Execute a given builtin
+-- Execute a given builtin. The `args` passed in are the args passed to the builtin.
 dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
 dispatchBuiltin args = \case
     "version" -> modifying #zipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
     "bag" -> do
         bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . Runtime.multiset)
         modifying #zipper (`Z.put` bag)
+    "getLine" -> do
+        line <- liftIO TIO.getLine
+        modifying #zipper (`Z.put` tstr line)
+    "print" -> do
+        let printer = \case
+                Leaf (RString input) -> TIO.putStrLn input
+                other -> print other
+        liftIO $ mapM_ printer args
+        modifying #zipper Z.dropFocus
     "parse" -> case args of
         Leaf (RString input):_ -> do
             filepath <- gets Runtime.path
@@ -258,7 +267,7 @@ runStep = do
     printZipper "Post-eat"
 
     -- Begin 2
-    rulesApplied <- fixApplyDefs
+    rulesApplied <- fixApplyDefs -- TODO: to fix bug in poc.rosin we need to eatDef and eatBuiltin inside of this fix
     modifying #multiset cleanUp
 
     -- Begin 3 (I Love Laziness)
