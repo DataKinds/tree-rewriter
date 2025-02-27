@@ -244,6 +244,8 @@ applyDefs = do
 fixApplyDefs :: RuntimeTV IO Int
 fixApplyDefs = do
     count <- applyDefs
+    eatBuiltin
+    eatDef
     if count == 0
         then pure 0
         else do
@@ -252,7 +254,7 @@ fixApplyDefs = do
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
---   2) We try to apply our rewrite rules at the current rewrite head as many times as possible
+--   2) We try to apply our rewrite rules at the current rewrite head as many times as possible. Between steps we repeat 1, checking for defs and builtins.
 --   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
 -- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
 runStep :: RuntimeTV IO (Int, Bool)
@@ -267,7 +269,7 @@ runStep = do
     printZipper "Post-eat"
 
     -- Begin 2
-    rulesApplied <- fixApplyDefs -- TODO: to fix bug in poc.rosin we need to eatDef and eatBuiltin inside of this fix
+    rulesApplied <- fixApplyDefs
     modifying #multiset cleanUp
 
     -- Begin 3 (I Love Laziness)
