@@ -47,22 +47,17 @@ isMultisetPush _ = False
 
 
 -- Rosin rule definition type
-data EatenDef = EatenDef UseCount [MatchCondition] [MatchEffect] deriving (Eq, Show)
+data EatenDef = EatenDef {
+    useCount :: UseCount,
+    matchCondition :: [MatchCondition],
+    matchEffect :: [MatchEffect]
+} deriving (Eq, Show)
 
 instance Semigroup EatenDef where
     (EatenDef uc mcs mes) <> (EatenDef uc' mcs' mes') = EatenDef (uc <> uc') (mcs <> mcs') (mes <> mes')
 
 instance Monoid EatenDef where
     mempty = EatenDef mempty [] []
-
-defUseCount :: EatenDef -> UseCount
-defUseCount (EatenDef uc _ _) = uc
-
-defMatchCondition :: EatenDef -> [MatchCondition]
-defMatchCondition (EatenDef _ mcs _) = mcs
-
-defMatchEffect :: EatenDef -> [MatchEffect]
-defMatchEffect (EatenDef _ _ mes) = mes
 
 -- instance Show EatenDef where
 --     show (EatenDef useCount matchConds matchEffs) = case (touchesSet, touchesTree) of 

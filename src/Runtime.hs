@@ -35,7 +35,7 @@ import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), defUseCount, defMatchCondition, defMatchEffect)
+import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
@@ -82,7 +82,7 @@ eatDef = do
     subject <- gets (Z.look . Runtime.zipper)
     case recognizeDef subject of
         -- Add the rule definition to the runtime and snip it out from the input tree
-        Just td -> case defUseCount td of
+        Just td -> case useCount td of
             UseOnce -> do
                 addSingleUseRule td
                 modifying #zipper Z.dropFocus
@@ -149,7 +149,7 @@ tryBindConditions (cond:xs) r = do
 -- Gives back the first definition where every condition matched, if it exists.
 tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
 tryDefinitions defs r = let
-    bindActions = [(d, (`tryBindConditions` r) . defMatchCondition $ d) | d <- defs]
+    bindActions = [(d, (`tryBindConditions` r) . matchCondition $ d) | d <- defs]
     binded = second (`runState` emptyBinder) <$> bindActions
     success = find (fst . snd) binded
     in do
@@ -232,7 +232,7 @@ applyDefs = do
                 let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
                 case matchedDef of
                     Just def -> let
-                            matchAction = mapM_ applyMatchEffect . defMatchEffect $ def
+                            matchAction = mapM_ applyMatchEffect . matchEffect $ def
                             bang = (`runStateT` binder) $ runStateT matchAction runtime -- TODO: brother...
                             ((_, runtime'), _) = runIdentity bang
                         in do
@@ -274,7 +274,7 @@ runStep = do
 
     -- Begin 3 (I Love Laziness)
     newZipper <- gets (Z.nextDfs . Runtime.zipper)
-    modifying #zipper (const newZipper)
+    assign #zipper newZipper
 
     -- Give back the value we use to assess termination
     printZipper "Pre-termination"
