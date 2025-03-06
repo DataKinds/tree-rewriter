@@ -28,6 +28,7 @@ library
       Definitions
       Multiset
       Parser
+      PatternTrie
       Recognizers
       Runtime
       TH
@@ -52,6 +53,7 @@ library
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
     , optics
     , optparse-applicative
     , parsec
@@ -59,6 +61,7 @@ library
     , text
     , text-icu
     , transformers
+    , unordered-containers
   default-language: Haskell2010
 
 executable rosin
@@ -83,6 +86,7 @@ executable rosin
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
     , optics
     , optparse-applicative
     , parsec
@@ -91,6 +95,7 @@ executable rosin
     , text-icu
     , transformers
     , tree-rewriter
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite rosin-test
@@ -116,6 +121,7 @@ test-suite rosin-test
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
     , optics
     , optparse-applicative
     , parsec
@@ -124,4 +130,5 @@ test-suite rosin-test
     , text-icu
     , transformers
     , tree-rewriter
+    , unordered-containers
   default-language: Haskell2010

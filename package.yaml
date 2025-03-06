@@ -29,6 +29,8 @@ dependencies:
 - parsec
 - optparse-applicative
 - filepath
+- unordered-containers
+- hashable
 - optics
 
 ghc-options:
