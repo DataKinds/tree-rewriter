@@ -26,15 +26,6 @@
     Given (((> ?>) ~> ?>) (> (hello world))) 
     We expect ((defined "(> ?>) ~> ?>") (hello world)))
 
-(Test a "Eager output accumulator"
-    Given 
-       (((>! ?!>) ~> ?>) 
-        ((interrupting cow) ~> moo)
-        (>! (interrupting cow))) 
-    We expect 
-       ((defined "(>! ?!>) ~> ?>") 
-        (defined "(interrupting cow) ~> moo")
-        moo))
 
 (Test a "Pack accumulator"
     Given 

@@ -88,6 +88,8 @@ sym :: String -> Tree RValue
 sym = Leaf . RSymbol . T.pack
 str :: String -> Tree RValue
 str = Leaf . RString . T.pack
+tstr :: T.Text -> Tree RValue
+tstr = Leaf . RString
 num :: Integral i => i -> Tree RValue
 num = Leaf . RNumber . fromIntegral
 regex :: String -> Either ParseError (Tree RValue)

@@ -29,6 +29,9 @@ dependencies:
 - parsec
 - optparse-applicative
 - filepath
+- unordered-containers
+- hashable
+- optics
 
 ghc-options:
 - -Wall
@@ -45,9 +48,13 @@ ghc-options:
 
 default-extensions:
 - OverloadedStrings
+- TupleSections
 - TemplateHaskell
 - QuasiQuotes
 - DeriveLift
+- DuplicateRecordFields
+- OverloadedRecordDot
+- OverloadedLabels
 
 library:
   source-dirs: src

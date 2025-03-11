@@ -85,6 +85,8 @@ recognizeBuiltin (Leaf _) = Nothing
 recognizeBuiltin (Branch trees) = case trees of
     (LeafSym "@"):[LeafSym "bag"] -> pure $ BuiltinRule "bag" []
     (LeafSym "@"):[LeafSym "version"] -> pure $ BuiltinRule "version" []
+    (LeafSym "@"):[LeafSym "getLine"] -> pure $ BuiltinRule "getLine" []
     (LeafSym "@"):(LeafSym "parse"):input@[LeafStr _] -> pure $ BuiltinRule "parse" input
     (LeafSym "@"):(LeafSym "cat"):path@[LeafStr _] -> pure $ BuiltinRule "cat" path
+    (LeafSym "@"):(LeafSym "print"):out -> pure $ BuiltinRule "print" out
     _ -> Nothing

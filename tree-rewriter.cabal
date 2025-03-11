@@ -25,8 +25,10 @@ source-repository head
 library
   exposed-modules:
       Core
+      Definitions
       Multiset
       Parser
+      PatternTrie
       Recognizers
       Runtime
       TH
@@ -39,20 +41,27 @@ library
       src
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
     , text
     , text-icu
     , transformers
+    , unordered-containers
   default-language: Haskell2010
 
 executable rosin
@@ -65,14 +74,20 @@ executable rosin
       app
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -O3 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
@@ -80,6 +95,7 @@ executable rosin
     , text-icu
     , transformers
     , tree-rewriter
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite rosin-test
@@ -93,14 +109,20 @@ test-suite rosin-test
       test
   default-extensions:
       OverloadedStrings
+      TupleSections
       TemplateHaskell
       QuasiQuotes
       DeriveLift
+      DuplicateRecordFields
+      OverloadedRecordDot
+      OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , containers
     , filepath
+    , hashable
+    , optics
     , optparse-applicative
     , parsec
     , template-haskell
@@ -108,4 +130,5 @@ test-suite rosin-test
     , text-icu
     , transformers
     , tree-rewriter
+    , unordered-containers
   default-language: Haskell2010
