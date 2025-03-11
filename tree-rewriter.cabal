@@ -28,10 +28,10 @@ library
       Definitions
       Multiset
       Parser
-      PatternTrie
       Recognizers
       Runtime
       TH
+      Trie
       Zipper
   other-modules:
       Paths_tree_rewriter
