@@ -244,8 +244,10 @@ applyDefs = do
 fixApplyDefs :: RuntimeTV IO Int
 fixApplyDefs = do
     count <- applyDefs
+    modifying #multiset cleanUp
     eatBuiltin
     eatDef
+    printZipper "Mid-fix"
     if count == 0
         then pure 0
         else do
@@ -264,17 +266,17 @@ runStep = do
     printZipper "Pre-step"
 
     -- Begin 1
-    eatDef
-    eatBuiltin
+    eatDef -- put, dropFocus
+    modifying #multiset cleanUp
+    eatBuiltin -- put, dropFocus, spliceRight
     printZipper "Post-eat"
 
     -- Begin 2
-    rulesApplied <- fixApplyDefs
-    modifying #multiset cleanUp
+    rulesApplied <- fixApplyDefs -- applyDef: dropFocus, spliceIn
+                                 -- eatDef/eatBuiltin: put, dropFocus, spliceRight
 
     -- Begin 3 (I Love Laziness)
-    newZipper <- gets (Z.nextDfs . Runtime.zipper)
-    assign #zipper newZipper
+    modifying #zipper Z.nextDfs
 
     -- Give back the value we use to assess termination
     printZipper "Pre-termination"

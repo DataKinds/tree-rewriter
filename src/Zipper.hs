@@ -1,6 +1,7 @@
 module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
+import Data.Functor ((<&>))
 
 data Zipper a = Zipper {
     _Left :: [Tree a],
@@ -40,22 +41,25 @@ spliceIn z [] = z
 spliceIn z [tree] = z { _Content = tree }
 spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
 
+-- Modify the focus and the right of a zipper, such that calling `nextDfs` will give back the spliced in data
 spliceRight :: Zipper a -> [Tree a] -> Zipper a
 spliceRight z' = go z' . reverse
     where go z [] = z
           go z [tree] = z { _Content = tree }
           go z (tree:trees) = z { _Right = tree:_Right z } `go` trees
 
--- Drop the focused tree and give back a zipper looking to the right, left, or above the previous focus
+-- Drop the focused tree and give back a zipper looking to the left, above, or up and to the left of the previous focus
+-- Goes the opposite direction of `nextDfs` such that `nextDfs . dropFocus` should focus the same as `nextDfs` alone
+-- TODO: That's quickcheckable, ain't it?
 dropFocus :: Zipper a -> Zipper a
-dropFocus z = tryLeft . tryRightUp . tryUp $ z
-    where dropRight lz = lz { _Right = tail (_Right lz) }
-          dropLeft rz = rz { _Left = tail (_Left rz) }
-          nullContent z' = z' { _Content = Branch [] }
-          tryLeft fallback = maybe fallback dropRight (left z)
-          tryRightUp fallback = fromMaybe fallback $ up (maybe fallback dropLeft (right z))
-          tryUp fallback = nullContent $ fromMaybe fallback (up z)
-
+dropFocus z = head $ catMaybes [
+        dropRight <$> left z, 
+        right z >>= up . dropLeft,
+        nullContent <$> up z,
+        Just $ nullContent z
+    ] where dropRight lz = lz { _Right = tail (_Right lz) }
+            dropLeft rz = rz { _Left = tail (_Left rz) }
+            nullContent z' = z' { _Content = Branch [] }
 
 -- Zipper combinators --
 

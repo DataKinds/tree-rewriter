@@ -46,7 +46,8 @@ main = hspec $ do
             "(1 1 ~ world) 1 (1 1)" `shouldBecome` "1 world"
         it "handles multiple terms on the RHS" $ do
             "(0 ~> 1 2 3) 0" `shouldBecome` "1 2 3"
-        xit "handles handles empty condition" $ do
+        it "handles handles empty condition" $ do
+            pendingWith "bugfix TODO"
             "(~ 1 2 3)" `shouldBecome` "1 2 3"
         it "handles pattern variables" $ do
             "(hello :a ~> (goodbye :a)) (hello world)" `shouldBecome` "(goodbye world)"
@@ -62,6 +63,9 @@ main = hspec $ do
             "(pushed |) (| pushed) (@ bag)" `shouldBecome` "()"
         it "handles permanent bag rules" $ do
             "(item |> peepus) (| item) (| item) (| item) (@ bag)" `shouldBecome` "((peepus 3))"
+        it "handles variables in bag conditions" $ do
+            pendingWith "feature TODO"
+            "(| (my item)) ((my :x) | (your :x)) (@ bag)" `shouldBecome` "(((your item) 1))"
     describe "mixed definition" $ do
         it "applies with bag rule first" $ do
             "(marble | bagged & tree ~ slurped) (| marble) tree (@ bag)" `shouldBecome` "slurped ((bagged 1))"
@@ -84,7 +88,14 @@ main = hspec $ do
         it "places higher precedence on one-time rules" $ do 
             "(a ~ once) (a ~> many) a" `shouldBecome` "once"
             "(a ~> many) (a ~ once) a" `shouldBecome` "once"
-        it "handles precedence on rules with the same specificity " $ do
+        it "places higher precedence on rules with lower depth" $ do 
+            "(top :x ~ topped) (mid :x ~ midded) (top (mid (bottom)))" `shouldBecome` "topped"
+            "(mid :x ~ midded) (top :x ~ topped) (top (mid (bottom)))" `shouldBecome` "topped"
+        it "eagerness overrides depth precedence" $ do 
+            "(mid :!x ~ midded) (top (mid (bottom))) (top :!x ~ topped) (top (eat))" `shouldBecome` "(top midded) topped"
+            "(top :!x ~ topped) (mid :!x ~ midded) (top (mid (bottom))) (top eat)" `shouldBecome` "(top midded) topped"
+            "(mid :!x ~ midded) (top :!x ~ topped) (top (mid (bottom))) (top eat)" `shouldBecome` "(top midded) topped"
+        it "handles precedence on rules with the same depth " $ do
             "((grab :x) ~> (grabbed :x) & | :x) ((grab goose) ~> (grab duck)) (grab goose)" `shouldBecomeWithBag` "(grabbed duck)" $ [("duck", 1)]
             "((grab goose) ~> (grab duck)) ((grab :x) ~> (grabbed :x) & | :x) (grab goose)" `shouldBecomeWithBag` "(grabbed goose)" $ [("goose", 1)]
         it "handles noneager variables matching lazily" $ do
