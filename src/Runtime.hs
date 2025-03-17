@@ -305,12 +305,13 @@ emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose trees = Runtime filepath verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
     where emptyRules = []
 
+-- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
+unzipper z = case Z.treeFromZipper z of
+    Branch trees -> trees
+    val@(Leaf _) -> [val]
+
 runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
     pure (unzipper . Runtime.zipper $ out, Runtime.rules out)
-    where
-        -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
-        unzipper z = case Z.treeFromZipper z of
-            Branch trees -> trees
-            val@(Leaf _) -> [val]
+  

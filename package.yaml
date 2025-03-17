@@ -81,3 +81,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - tree-rewriter
+    - hspec
