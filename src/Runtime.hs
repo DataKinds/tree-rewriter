@@ -77,7 +77,8 @@ addSingleUseRule rule = modifying #singleUseRules (rule:)
 -- Execute a Rosin runtime --
 
 -- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
-eatDef :: Monad m => RuntimeT m
+-- Gives back the count of definitions consumed.
+eatDef :: Monad m => RuntimeTV m Int
 eatDef = do
     subject <- gets (Z.look . Runtime.zipper)
     case recognizeDef subject of
@@ -85,11 +86,13 @@ eatDef = do
         Just td -> case useCount td of
             UseOnce -> do
                 addSingleUseRule td
-                modifying #zipper Z.dropFocus
+                modifying #zipper (Z.nextDfs . Z.dropFocus)
+                pure 1
             UseMany -> do
                 addRule td
                 modifying #zipper (`Z.put` branch [sym "defined", str $ show td])
-        Nothing -> pure ()
+                pure 1
+        Nothing -> pure 0
 
 -- Execute a given builtin. The `args` passed in are the args passed to the builtin.
 dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
@@ -106,7 +109,7 @@ dispatchBuiltin args = \case
                 Leaf (RString input) -> TIO.putStrLn input
                 other -> print other
         liftIO $ mapM_ printer args
-        modifying #zipper Z.dropFocus
+        modifying #zipper (Z.nextDfs . Z.dropFocus)
     "parse" -> case args of
         Leaf (RString input):_ -> do
             filepath <- gets Runtime.path
@@ -123,12 +126,14 @@ dispatchBuiltin args = \case
     shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 -- Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
-eatBuiltin :: RuntimeT IO
+eatBuiltin :: RuntimeTV IO Int
 eatBuiltin = do
     subject <- gets (Z.look . Runtime.zipper)
     case recognizeBuiltin subject of
-        Just (BuiltinRule name args) -> dispatchBuiltin args name
-        Nothing -> pure ()
+        Just (BuiltinRule name args) -> do 
+            dispatchBuiltin args name
+            pure 1
+        Nothing -> pure 0
 
 thrd :: (a, b, c) -> c
 thrd (_,_,c) = c
@@ -223,7 +228,7 @@ applyDefs = do
     -- Grab the first multi use rule that satisfies all conditions and apply it
     appliedRule <- applyFirstMatchingDefinition repeatDefs
     printLog $ "Repeat applied: " ++ show appliedRule
-    pure $ sum (bool 0 1 <$> [isJust appliedOnceRule, isJust appliedRule])
+    pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
         where
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
             applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
@@ -240,19 +245,31 @@ applyDefs = do
                             pure $ Just def
                     Nothing -> pure Nothing
 
--- Run `applyDefs` until there's no point...
-fixApplyDefs :: RuntimeTV IO Int
-fixApplyDefs = do
-    count <- applyDefs
-    modifying #multiset cleanUp
-    eatBuiltin
-    eatDef
+-- Run `applyDefs`, `eatDef`, and `eatBuiltin` until there's no point...
+fixEat :: RuntimeTV IO Int
+fixEat = do
+    n <- eatBuiltin -- put, nextDfs . dropFocus, spliceRight
+    n' <- fixApplyDefs
+    n'' <- eatDef -- put, nextDfs . dropFocus
+    n''' <- fixApplyDefs
     printZipper "Mid-fix"
+    let count = n + n' + n'' + n'''
     if count == 0
         then pure 0
         else do
             tc <- fixApplyDefs
             pure $ count + tc
+
+-- Run `applyDefs` until there's no point...
+fixApplyDefs :: RuntimeTV IO Int
+fixApplyDefs = do
+    n <- applyDefs
+    if n == 0
+        then pure 0
+        else do
+            modifying #multiset cleanUp
+            tc <- fixApplyDefs
+            pure $ n + tc
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
@@ -265,18 +282,14 @@ runStep = do
     when verbose (lift $ putStrLn "== STARTING STEP ==")
     printZipper "Pre-step"
 
-    -- Begin 1
-    eatDef -- put, dropFocus
-    modifying #multiset cleanUp
-    eatBuiltin -- put, dropFocus, spliceRight
+    -- Begin 1 & 2
+    count <- fixApplyDefs
+    count' <- fixEat
     printZipper "Post-eat"
 
-    -- Begin 2
-    rulesApplied <- fixApplyDefs -- applyDef: dropFocus, spliceIn
-                                 -- eatDef/eatBuiltin: put, dropFocus, spliceRight
-
-    -- Begin 3 (I Love Laziness)
-    modifying #zipper Z.nextDfs
+    -- Begin 3 if we never matched anything. Matching stuff usually moves our zipper forward, so we don't move if we matched
+    let rulesApplied = count + count'
+    when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
 
     -- Give back the value we use to assess termination
     printZipper "Pre-termination"
@@ -291,7 +304,10 @@ fixStep = go 0
     where
         readyToStop = do
             (count, reset) <- runStep
-            unless reset (if count > 0 then go count else readyToStop)
+            if count > 0 then
+                go count
+            else 
+                unless reset readyToStop
         go count = do
             (count', reset) <- runStep
             if reset

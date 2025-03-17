@@ -79,6 +79,10 @@ main = hspec $ do
         it "handles bindings from tree condition to pocket effect" $ do
             "((grab :x) ~> (grabbed :x) & | :x) (grab pipe) (@ bag)" `shouldBecome` "(grabbed pipe) ((pipe 1))"
     describe "precedence and eagerness" $ do
+        it "respects declaration order" $ do
+            "(hello ~ world) hello hello" `shouldBecome` "world hello"
+            "hello (hello ~ world) hello" `shouldBecome` "hello world"
+            "hello hello (hello ~ world)" `shouldBecome` "world hello"
         it "respects recency precedence order within many-time rules" $ do 
             "(a ~> c) (a ~> b) a" `shouldBecome` "b"
             "(a ~> b) (a ~> c) a" `shouldBecome` "c"
