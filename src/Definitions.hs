@@ -2,8 +2,7 @@
 -- This module implements the datatypes and functions required to
 -- manage Rosin rule definitions.
 module Definitions where
-import Core (Tree, RValue, sexprprint)
-import Data.List (find)
+import Core (Tree, RValue)
 import qualified Multiset as MS 
 
 -- is this definition single use or will it apply forever?

@@ -25,12 +25,12 @@ source-repository head
 library
   exposed-modules:
       Core
+      Core.DSL
       Definitions
       Multiset
       Parser
       Recognizers
       Runtime
-      TH
       Trie
       Zipper
   other-modules:

@@ -12,12 +12,10 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), unbranch, rebranch)
+import Core (Tree (..), RValue (..), rebranch)
 import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
-import Control.Applicative (Alternative(many, some))
-import Control.Monad (foldM)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
 
 

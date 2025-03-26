@@ -2,7 +2,6 @@
 module Multiset where
 import qualified Data.Map as M
 import Control.Monad (foldM)
-import Data.Bifunctor (Bifunctor(first))
 
 
 newtype Ord a => Multiset a = Multiset { unmultiset :: M.Map a Int } deriving (Eq)
