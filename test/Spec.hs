@@ -61,6 +61,9 @@ main = hspec $ do
         it "handles bag pop" $ do
             "(| pushed) (pushed |) (@ bag)" `shouldBecome` "()"
             "(pushed |) (| pushed) (@ bag)" `shouldBecome` "()"
+        it "handles a mess" $ do
+            "(| apple pear orange peach) (apple pear |) (pear orange |) (peach |) ()" `shouldBecomeWithBag` "()" $ [("orange", 1)]
+
         it "handles permanent bag rules" $ do
             "(item |> peepus) (| item) (| item) (| item) (@ bag)" `shouldBecome` "((peepus 3))"
         it "handles variables in bag conditions" $ do
@@ -108,3 +111,10 @@ main = hspec $ do
         it "handles eager variables" $ do
             "((grab :!x) ~> (grabbed :x) & | :x) (goose ~> duck) (grab goose)" `shouldBecomeWithBag` "(grabbed duck)" $ [("duck", 1)]
             "(goose ~> duck) ((grab :!x) ~> (grabbed :x) & | :x) (grab goose)" `shouldBecomeWithBag` "(grabbed duck)" $ [("duck", 1)]
+    describe "regex" $ do
+        it "supports group matching" $ do
+            "(/^(regex) (group) (test)!$/ ~> \"$3 $1 $2 $0\" ($1)) \"regex group test!\"" `shouldBecome` "\"test regex group regex group test!\" (\"regex\")"
+        it "supports anchors" $ do
+            "(/^H\\w..o!$/ ~> \"elo!\") \"... Hello!...\" \"Hello!\"" `shouldBecome` "\"... Hello!...\" \"elo!\""
+        it "supports pre and post match groups" $ do
+            "(/(floating) regex/ ~> \"$> $1 $<\") \"this should match my floating regex!\"" `shouldBecome` "\"! floating this should match my \""
