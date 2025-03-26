@@ -1,22 +1,26 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeOperators #-}
+
 module Core where
 
 import qualified Data.Text as T
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, modify, runState, gets, StateT )
+import Control.Monad.Trans.State.Lazy ( State, gets, StateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
 import Data.Maybe (mapMaybe, fromJust)
-import Data.Bifunctor (first, second)
-import Control.Monad.Trans.State ( StateT(..), put )
-import Control.Monad.Trans.Class (lift)
-import Data.Foldable (find)
+import Data.Bifunctor (first)
 import Data.Function (on)
-import Data.Text.ICU (ParseError, regex')
 import Data.Functor.Identity (Identity(..))
+import Optics (modifying, makeFieldLabelsNoPrefix)
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -84,22 +88,6 @@ instance Show RValue where
     show (RNumber t) = show t
     show (RVariable t) = show t
 
-sym :: String -> Tree RValue
-sym = Leaf . RSymbol . T.pack
-str :: String -> Tree RValue
-str = Leaf . RString . T.pack
-tstr :: T.Text -> Tree RValue
-tstr = Leaf . RString
-num :: Integral i => i -> Tree RValue
-num = Leaf . RNumber . fromIntegral
-regex :: String -> Either ParseError (Tree RValue)
-regex = fmap (Leaf . RRegex) . regex' [] . T.pack
--- Pattern variables 
-pvar :: PVar -> Tree RValue
-pvar = Leaf . RVariable
--- Runtime branch
-branch :: [Tree a] -> Tree a
-branch = Branch
 
 
 -- The tree!
@@ -145,23 +133,18 @@ instance Show a => Show (Rewrite a) where
 
 -- The Binder type, holding the intermediate state needed to apply a single rewrite rule
 data Binder = Binder {
-    binderTreeBindings :: M.Map T.Text [Tree RValue],
-    binderRegexBindings :: M.Map T.Text T.Text
+    treeBindings :: M.Map T.Text [Tree RValue],
+    regexBindings :: M.Map T.Text T.Text
 }
+makeFieldLabelsNoPrefix ''Binder
 type BinderT = StateT Binder -- Binder monad
 type Binder_ = BinderT Identity
 
 emptyBinder :: Binder
 emptyBinder = Binder {
-    binderTreeBindings = mempty,
-    binderRegexBindings = mempty
+    treeBindings = mempty,
+    regexBindings = mempty
 }
-
--- Binder lenses --
-updateBinderTreeBindings :: (M.Map T.Text [Tree RValue] -> M.Map T.Text [Tree RValue]) -> Binder -> Binder
-updateBinderTreeBindings f b = b { binderTreeBindings = f (binderTreeBindings b) }
-updateBinderRegexBindings :: (M.Map T.Text T.Text -> M.Map T.Text T.Text) -> Binder -> Binder
-updateBinderRegexBindings f b = b { binderRegexBindings = f (binderRegexBindings b) }
 
 -- What name do we use for PVars that go into the Binder? 
 pvarBinderName :: PVar -> T.Text
@@ -171,31 +154,31 @@ pvarBinderName pvar = if pvarRegexGroupAcceptor pvar
 
 -- Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
 addTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
-addTreeBinding pvar binding = modify (updateBinderTreeBindings $ M.alter go (pvarBinderName pvar))
+addTreeBinding pvar binding = modifying #treeBindings (M.alter go (pvarBinderName pvar))
     where
         go Nothing = Just [binding]
         go (Just existingBindings) = Just $ binding:existingBindings
 
 -- Get the binding list for a tree pattern variable
 getTreeBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
-getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
+getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . treeBindings)
 
 -- Bind a new or existing tree pattern variable. Succeed if the binding completed, which requires equality with
 -- the existing binding.
 bindIfEqual :: Monad m => PVar -> Tree RValue -> BinderT m Bool
 bindIfEqual pvar binding = do
-    prevBinding <- gets (M.lookup (pvarBinderName pvar) . binderTreeBindings)
+    prevBinding <- gets (M.lookup (pvarBinderName pvar) . treeBindings)
     case prevBinding of
         Just (rval:_) -> pure $ binding == rval
         _ -> addTreeBinding pvar binding >> pure True
 
 -- Bind a new or existing regex match variable. Overwrite previously bound variables.
 addRegexBinding :: (Monad m) => T.Text -> T.Text -> BinderT m ()
-addRegexBinding groupname matchtext = modify (updateBinderRegexBindings $ M.insert groupname matchtext)
+addRegexBinding groupname matchtext = modifying #regexBindings $ M.insert groupname matchtext
 
 -- Get the binding list for a tree pattern variable
 getRegexBinding :: Monad m => PVar -> BinderT m (Maybe T.Text)
-getRegexBinding pvar = gets (M.lookup (pvarBinderName pvar) . binderRegexBindings)
+getRegexBinding pvar = gets (M.lookup (pvarBinderName pvar) . regexBindings)
 
 -- Get the correct binding for a PVar. Some PVars may be stored differently in the Binder depending on their tag.
 getBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
@@ -204,8 +187,6 @@ getBinding pvar = case pvarTag pvar of
         binding <- getRegexBinding pvar
         pure (pure . Leaf . RString <$> binding)
     _ -> getTreeBinding pvar
-
-
 
 
 -- Flatten a bunch of RValue trees into one Tree Branch in DFS order
@@ -311,9 +292,6 @@ tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) =
 -- Catch failed matches
 tryApply _ _ _ = pure False
 
-fst3 :: (a, b, c) -> a
-fst3 (a,_,_)=a
-
 
 -- Apply variable bindings to a pattern, "filling it out" and discarding the Pattern type information
 betaReduce :: Tree RValue -> Binder_ [Tree RValue]
@@ -343,6 +321,6 @@ betaReduce input@(Leaf (RVariable pvar)) = do
             _ -> reverse rvals
 -- Perform regex capture group substitutions!
 betaReduce (Leaf (RString pstr)) = do
-    regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . binderRegexBindings)
+    regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . regexBindings)
     pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr regexBindings
 betaReduce (Leaf pval) = pure [Leaf pval]

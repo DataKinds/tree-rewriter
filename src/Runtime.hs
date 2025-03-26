@@ -12,21 +12,18 @@ module Runtime where
 
 import Core
     ( betaReduce,
-      branch,
       emptyBinder,
-      num,
       rebranch,
-      str,
-      sym,
       tryApply,
       Binder_,
       RValue(RString),
-      Tree(..), tstr )
+      Tree(..) )
+import Core.DSL ( sym, str, num, branch, pvar, regex, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, get, put)
+import Control.Monad.Trans.State (StateT (runStateT), gets, execStateT, State, runState, state, get, put)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
@@ -65,6 +62,11 @@ makeFieldLabelsNoPrefix ''Runtime
 type RuntimeTV m = StateT Runtime m
 type RuntimeT m = RuntimeTV m ()
 type RuntimeV = State Runtime
+
+emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
+emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
+    where emptyRules = []
+
 
 -- Add a new tree rewriting rule into the runtime
 addRule :: Monad m => EatenDef -> RuntimeT m
@@ -219,8 +221,7 @@ applyDefs = do
     printLog $ "Once defs: " ++ show onceDefs
     printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
-    pocket <- gets Runtime.multiset
-    printLog $ "Pocket: " ++ show pocket
+    gets Runtime.multiset >>= \p -> printLog $ "Pocket: " ++ show p
     appliedOnceRule <- applyFirstMatchingDefinition onceDefs
     printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
@@ -245,6 +246,17 @@ applyDefs = do
                             pure $ Just def
                     Nothing -> pure Nothing
 
+-- Run `applyDefs` until there's no point...
+fixApplyDefs :: RuntimeTV IO Int
+fixApplyDefs = do
+    n <- applyDefs
+    if n == 0
+        then pure 0
+        else do
+            modifying #multiset cleanUp
+            tc <- fixApplyDefs
+            pure $ n + tc
+
 -- Run `applyDefs`, `eatDef`, and `eatBuiltin` until there's no point...
 fixEat :: RuntimeTV IO Int
 fixEat = do
@@ -259,17 +271,6 @@ fixEat = do
         else do
             tc <- fixApplyDefs
             pure $ count + tc
-
--- Run `applyDefs` until there's no point...
-fixApplyDefs :: RuntimeTV IO Int
-fixApplyDefs = do
-    n <- applyDefs
-    if n == 0
-        then pure 0
-        else do
-            modifying #multiset cleanUp
-            tc <- fixApplyDefs
-            pure $ n + tc
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
@@ -318,10 +319,6 @@ fixStep = go 0
 -- Executes a Rosin runtime
 run :: Runtime -> IO Runtime
 run = execStateT fixStep
-
-emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose trees = Runtime filepath verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
-    where emptyRules = []
 
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
 unzipper z = case Z.treeFromZipper z of
