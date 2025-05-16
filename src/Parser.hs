@@ -11,8 +11,8 @@ import Text.Parsec
       try,
       optionMaybe,
       ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail, runParserT, ParseError )
-import Core ( sym, str, num, branch, pvar, regex,
-    Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
+import Core ( Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
+import Core.DSL ( sym, str, num, branch, pvar, regex )
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
 import Data.Functor.Identity (Identity (..))

@@ -12,12 +12,10 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), unbranch, rebranch)
-import Definitions (EatenDef (..), MatchCondition (..), MatchEffect (..), UseCount (..))
+import Core (Tree (..), RValue (..), rebranch)
+import Definitions (MatchRule (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
-import Control.Applicative (Alternative(many, some))
-import Control.Monad (foldM)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
 
 
@@ -40,7 +38,7 @@ pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
 pocketCopies nTimes = MS.fromList . map (,nTimes)
 
 -- Read a definition from a stream of tree tokens
-eatCondEffectPair :: [Tree RValue] -> Writer EatenDef [Tree RValue]
+eatCondEffectPair :: [Tree RValue] -> Writer MatchRule [Tree RValue]
 eatCondEffectPair [] = pure []
 eatCondEffectPair [_] = pure []
 eatCondEffectPair candidate = let 
@@ -50,12 +48,12 @@ eatCondEffectPair candidate = let
     rest = dropWhile (== Leaf (RSymbol "&")) andRest
     in case listToMaybe opEff >>= acceptOp of  
         Just (TreeOp, nUse) -> do
-            tell $ EatenDef nUse [TreePattern $ rebranch cond] [TreeReplacement eff]
+            tell $ MatchRule nUse [TreePattern $ rebranch cond] [TreeReplacement eff]
             pure rest
         Just (SetOp, nUse) -> do
             let pat = if null cond then [] else [MultisetPattern . pocketCopies 1 $ cond]
             let pushes = catMaybes [if null eff then Nothing else Just $ pocketCopies 1 eff, if null cond then Nothing else Just $ pocketCopies (-1) cond]
-            tell $ EatenDef nUse pat (MultisetPush <$> pushes)
+            tell $ MatchRule nUse pat (MultisetPush <$> pushes)
             pure rest
         Nothing -> pure []
 
@@ -67,7 +65,7 @@ deplete f x = f x >>= go
         go st = deplete f st
 
 -- Given a tree, is the head of it listing out a rewrite rule?
-recognizeDef :: Tree RValue -> Maybe EatenDef
+recognizeDef :: Tree RValue -> Maybe MatchRule
 recognizeDef (Leaf _) = Nothing
 recognizeDef (Branch trees) = let
     ingestedDef = execWriter $ deplete eatCondEffectPair trees

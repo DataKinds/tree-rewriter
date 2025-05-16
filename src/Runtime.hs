@@ -12,21 +12,18 @@ module Runtime where
 
 import Core
     ( betaReduce,
-      branch,
       emptyBinder,
-      num,
       rebranch,
-      str,
-      sym,
       tryApply,
       Binder_,
       RValue(RString),
-      Tree(..), tstr )
+      Tree(..) )
+import Core.DSL ( sym, str, num, branch, pvar, regex, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), modify, gets, execStateT, State, runState, state, get, put)
+import Control.Monad.Trans.State (StateT (runStateT), gets, execStateT, State, runState, state, get, put)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
@@ -35,7 +32,7 @@ import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
+import Definitions (MatchCondition (..), MatchRule, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
@@ -53,9 +50,9 @@ data Runtime = Runtime {
     -- Do we print out debug information?
     verbose :: Bool,
     -- What rewriting rules are active?
-    rules :: [EatenDef],
+    rules :: [MatchRule],
     -- What rewriting lambdas are active?
-    singleUseRules :: [EatenDef],
+    singleUseRules :: [MatchRule],
     -- Where are we in the data tree?
     zipper :: Z.Zipper RValue,
     -- Multiset state!
@@ -66,12 +63,17 @@ type RuntimeTV m = StateT Runtime m
 type RuntimeT m = RuntimeTV m ()
 type RuntimeV = State Runtime
 
+emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
+emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
+    where emptyRules = []
+
+
 -- Add a new tree rewriting rule into the runtime
-addRule :: Monad m => EatenDef -> RuntimeT m
+addRule :: Monad m => MatchRule -> RuntimeT m
 addRule rule = modifying #rules (rule:)
 
 -- Add a new single use tree rewriting rule into the runtime
-addSingleUseRule :: Monad m => EatenDef -> RuntimeT m
+addSingleUseRule :: Monad m => MatchRule -> RuntimeT m
 addSingleUseRule rule = modifying #singleUseRules (rule:)
 
 -- Execute a Rosin runtime --
@@ -152,7 +154,7 @@ tryBindConditions (cond:xs) r = do
 
 -- Apply matching conditions from a list of definitions.
 -- Gives back the first definition where every condition matched, if it exists.
-tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
+tryDefinitions :: [MatchRule] -> Runtime -> Binder_ (Maybe MatchRule)
 tryDefinitions defs r = let
     bindActions = [(d, (`tryBindConditions` r) . matchCondition $ d) | d <- defs]
     binded = second (`runState` emptyBinder) <$> bindActions
@@ -163,7 +165,7 @@ tryDefinitions defs r = let
 
 -- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
 -- Gives back the first definition where every condition matched, if it exists.
-tryDefinitionsAt :: [EatenDef] -> Runtime -> Tree RValue -> Binder_ (Maybe EatenDef)
+tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
 tryDefinitionsAt defs r subject = let
     r' = over #zipper (`Z.put` subject) r
     in tryDefinitions defs r'
@@ -219,8 +221,7 @@ applyDefs = do
     printLog $ "Once defs: " ++ show onceDefs
     printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
-    pocket <- gets Runtime.multiset
-    printLog $ "Pocket: " ++ show pocket
+    gets Runtime.multiset >>= \p -> printLog $ "Pocket: " ++ show p
     appliedOnceRule <- applyFirstMatchingDefinition onceDefs
     printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
@@ -231,7 +232,7 @@ applyDefs = do
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
         where
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
-            applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
+            applyFirstMatchingDefinition :: [MatchRule] -> RuntimeTV IO (Maybe MatchRule)
             applyFirstMatchingDefinition defs = do
                 runtime <- get
                 let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
@@ -244,6 +245,17 @@ applyDefs = do
                             put runtime'
                             pure $ Just def
                     Nothing -> pure Nothing
+
+-- Run `applyDefs` until there's no point...
+fixApplyDefs :: RuntimeTV IO Int
+fixApplyDefs = do
+    n <- applyDefs
+    if n == 0
+        then pure 0
+        else do
+            modifying #multiset cleanUp
+            tc <- fixApplyDefs
+            pure $ n + tc
 
 -- Run `applyDefs`, `eatDef`, and `eatBuiltin` until there's no point...
 fixEat :: RuntimeTV IO Int
@@ -259,17 +271,6 @@ fixEat = do
         else do
             tc <- fixApplyDefs
             pure $ count + tc
-
--- Run `applyDefs` until there's no point...
-fixApplyDefs :: RuntimeTV IO Int
-fixApplyDefs = do
-    n <- applyDefs
-    if n == 0
-        then pure 0
-        else do
-            modifying #multiset cleanUp
-            tc <- fixApplyDefs
-            pure $ n + tc
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
 --   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
@@ -319,16 +320,12 @@ fixStep = go 0
 run :: Runtime -> IO Runtime
 run = execStateT fixStep
 
-emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose trees = Runtime filepath verbose emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
-    where emptyRules = []
-
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
 unzipper z = case Z.treeFromZipper z of
     Branch trees -> trees
     val@(Leaf _) -> [val]
 
-runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])
+runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [MatchRule])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
     pure (unzipper . Runtime.zipper $ out, Runtime.rules out)
