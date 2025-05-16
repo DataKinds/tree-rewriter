@@ -24,3 +24,6 @@
     Given ((/(floating) regex/ ~> "$> $1 $<") "this should match my floating regex!")
     We expect ((defined "/(floating) regex/ ~> \"$> $1 $<\"") "! floating this should match my "))
 
+(Test a "Two regexes with separate capture groups (TODO: Change syntax to $0.1, $1.1)"
+    Given ((concat /(.+)/ /(.+)/ ~ "$1 $2") (concat "foo" "bar"))
+    We expect ("foo bar"))

@@ -3,11 +3,13 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE InstanceSigs #-}
 module Trie where
 import Data.HashMap.Strict (HashMap, unionWith)
 import Data.Hashable
 import Core
 import Definitions (MatchCondition)
+import qualified Data.Map as M
 
 data Matcher a where
     Hole :: Matcher a
@@ -37,3 +39,30 @@ insertMatchCond = undefined
 --     (Nest xs) <> (Nest ys) = Nest $ unionWith (<>) xs ys
 
 
+data Trie branch leaf where
+    TrieRoot :: Ord branch => M.Map branch (Trie branch leaf) -> Trie branch leaf
+    TrieNode :: Ord branch => branch -> Either leaf (M.Map branch (Trie branch leaf)) -> Trie branch leaf
+deriving instance (Show branch, Show leaf) => Show (Trie branch leaf)
+
+instance Semigroup (Trie a b) where
+    (<>) :: Trie a b -> Trie a b -> Trie a b
+    t1@(TrieRoot ts1) <> t2@(TrieRoot ts2) = undefined
+
+instance Ord a => Monoid (Trie a b) where
+    mempty = TrieRoot mempty
+
+-- | Concatenate a node onto this layer of the trie. 
+(<:>) :: Trie b l -> b -> Trie b l
+t@(TrieRoot ts) <:> fresh = case M.lookup fresh ts of
+    Just _ -> t
+    Nothing -> TrieRoot $ M.insert fresh (TrieNode fresh (Right mempty)) ts
+t@(TrieNode b (Right ts)) <:> fresh = case M.lookup fresh ts of
+    Just _ -> t
+    Nothing -> TrieNode b . Right $ M.insert fresh (TrieNode fresh (Right mempty)) ts
+TrieNode b (Left leaf) <:> fresh = TrieNode b . Right $ M.fromList [(fresh, TrieNode fresh (Left leaf))]
+
+
+-- -- | Add an entry into a trie.
+-- add :: [branch] -> leaf -> Trie branch leaf -> Trie branch leaf
+-- add xs l t = t <> (foldr (TrieNode x ))
+--     where
