@@ -32,7 +32,7 @@ import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import Definitions (MatchCondition (..), EatenDef, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
+import Definitions (MatchCondition (..), MatchRule, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
@@ -50,9 +50,9 @@ data Runtime = Runtime {
     -- Do we print out debug information?
     verbose :: Bool,
     -- What rewriting rules are active?
-    rules :: [EatenDef],
+    rules :: [MatchRule],
     -- What rewriting lambdas are active?
-    singleUseRules :: [EatenDef],
+    singleUseRules :: [MatchRule],
     -- Where are we in the data tree?
     zipper :: Z.Zipper RValue,
     -- Multiset state!
@@ -69,11 +69,11 @@ emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules empt
 
 
 -- Add a new tree rewriting rule into the runtime
-addRule :: Monad m => EatenDef -> RuntimeT m
+addRule :: Monad m => MatchRule -> RuntimeT m
 addRule rule = modifying #rules (rule:)
 
 -- Add a new single use tree rewriting rule into the runtime
-addSingleUseRule :: Monad m => EatenDef -> RuntimeT m
+addSingleUseRule :: Monad m => MatchRule -> RuntimeT m
 addSingleUseRule rule = modifying #singleUseRules (rule:)
 
 -- Execute a Rosin runtime --
@@ -154,7 +154,7 @@ tryBindConditions (cond:xs) r = do
 
 -- Apply matching conditions from a list of definitions.
 -- Gives back the first definition where every condition matched, if it exists.
-tryDefinitions :: [EatenDef] -> Runtime -> Binder_ (Maybe EatenDef)
+tryDefinitions :: [MatchRule] -> Runtime -> Binder_ (Maybe MatchRule)
 tryDefinitions defs r = let
     bindActions = [(d, (`tryBindConditions` r) . matchCondition $ d) | d <- defs]
     binded = second (`runState` emptyBinder) <$> bindActions
@@ -165,7 +165,7 @@ tryDefinitions defs r = let
 
 -- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
 -- Gives back the first definition where every condition matched, if it exists.
-tryDefinitionsAt :: [EatenDef] -> Runtime -> Tree RValue -> Binder_ (Maybe EatenDef)
+tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
 tryDefinitionsAt defs r subject = let
     r' = over #zipper (`Z.put` subject) r
     in tryDefinitions defs r'
@@ -232,7 +232,7 @@ applyDefs = do
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
         where
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
-            applyFirstMatchingDefinition :: [EatenDef] -> RuntimeTV IO (Maybe EatenDef)
+            applyFirstMatchingDefinition :: [MatchRule] -> RuntimeTV IO (Maybe MatchRule)
             applyFirstMatchingDefinition defs = do
                 runtime <- get
                 let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
@@ -325,7 +325,7 @@ unzipper z = case Z.treeFromZipper z of
     Branch trees -> trees
     val@(Leaf _) -> [val]
 
-runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [EatenDef])
+runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [MatchRule])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
     pure (unzipper . Runtime.zipper $ out, Runtime.rules out)

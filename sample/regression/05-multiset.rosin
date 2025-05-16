@@ -2,10 +2,10 @@
 
 (Test a "Placing and picking things out from the pocket"
     Given (
-        (|(apple pear orange peach))
-        ((apple pear) |)
-        ((pear orange)|)
-        ((peach)|)
+        (| apple pear orange peach)
+        (apple pear |)
+        (pear orange |)
+        (peach |)
         (@ bag)
     )
     We expect (
@@ -18,10 +18,10 @@
     Given (
         (lettuce | boring-salad)
         (croutons lettuce | caesar-salad)
-        ((tomato egg bacon lettuce) | cobb-salad)
-        (| (tomato egg))
+        (tomato egg bacon lettuce | cobb-salad)
+        (| tomato egg)
         (| bacon croutons)
-        (| (lettuce))
+        (| lettuce)
         (@ bag)
     )
     We expect (
