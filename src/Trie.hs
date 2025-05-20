@@ -10,6 +10,7 @@ import Data.Hashable
 import Core
 import Definitions (MatchCondition)
 import qualified Data.Map as M
+import Data.Monoid (Alt(..))
 
 data Matcher a where
     Hole :: Matcher a
@@ -38,31 +39,49 @@ insertMatchCond = undefined
 --     (Sentinel x) <> (Nest ys) = Nest $ unionWith (<>) xs ys
 --     (Nest xs) <> (Nest ys) = Nest $ unionWith (<>) xs ys
 
+data TrieNode branch leaf where
+    TrieNode :: Ord branch => branch -> M.Map branch (TrieNode branch leaf) -> Maybe leaf -> TrieNode branch leaf
+deriving instance (Show branch, Show leaf) => Show (TrieNode branch leaf)
 
 data Trie branch leaf where
-    TrieRoot :: Ord branch => M.Map branch (Trie branch leaf) -> Trie branch leaf
-    TrieNode :: Ord branch => branch -> Either leaf (M.Map branch (Trie branch leaf)) -> Trie branch leaf
+    TrieRoot :: Ord branch => M.Map branch (TrieNode branch leaf) -> Trie branch leaf
 deriving instance (Show branch, Show leaf) => Show (Trie branch leaf)
 
-instance Semigroup (Trie a b) where
-    (<>) :: Trie a b -> Trie a b -> Trie a b
-    t1@(TrieRoot ts1) <> t2@(TrieRoot ts2) = undefined
 
-instance Ord a => Monoid (Trie a b) where
+-- | Combine two TrieNodes using a given function to combine the leaves.
+-- TODO: this should be possible combineWith :: (b -> c -> d) -> TrieNode a b -> TrieNode a c -> TrieNode a d
+combineWith :: Show a => (b -> b -> b) -> TrieNode a b -> TrieNode a b -> TrieNode a b
+combineWith leafOp (TrieNode b1 rest1 leaf1) (TrieNode b2 rest2 leaf2)
+    | b1 == b2 = TrieNode b1 
+        (M.unionWith (combineWith leafOp) rest1 rest2) 
+        (getAlt $ liftA2 leafOp (Alt leaf1) (Alt leaf2))
+    | otherwise = error $ unwords [show b1, "/=", show b2] -- TODO: this _could_ return a TrieRoot if I Could Figure Out How To Type It
+
+instance (Show b, Semigroup l) => Semigroup (TrieNode b l) where
+    (<>) :: TrieNode b l -> TrieNode b l -> TrieNode b l
+    (<>) = combineWith (<>)
+
+instance  (Show b, Semigroup l) => Semigroup (Trie b l) where
+    (<>) :: Trie b l -> Trie b l -> Trie b l
+    (TrieRoot rest1) <> (TrieRoot rest2) = TrieRoot $ M.unionWith (<>) rest1 rest2
+    
+instance (Ord b, Show b, Semigroup l) => Monoid (Trie b l) where
     mempty = TrieRoot mempty
 
--- | Concatenate a node onto this layer of the trie. 
-(<:>) :: Trie b l -> b -> Trie b l
-t@(TrieRoot ts) <:> fresh = case M.lookup fresh ts of
-    Just _ -> t
-    Nothing -> TrieRoot $ M.insert fresh (TrieNode fresh (Right mempty)) ts
-t@(TrieNode b (Right ts)) <:> fresh = case M.lookup fresh ts of
-    Just _ -> t
-    Nothing -> TrieNode b . Right $ M.insert fresh (TrieNode fresh (Right mempty)) ts
-TrieNode b (Left leaf) <:> fresh = TrieNode b . Right $ M.fromList [(fresh, TrieNode fresh (Left leaf))]
+-- | Trie construction operators. Example usage:
+-- ('h' <:< 'e' <:< 'l' <:< 'l' <:< 'o' <: 1) <> ('h' <:< 'e' <:< 'c' <:< 'k' <: 2)
+-- ('h' <:< 'e'  <: []) <> ('h' <:< 'i' <: [])
+-- ('h'  <: []) <> ('h' <: [])
+infixr 8 <:<, <:
 
+-- | Wrap a TrieNode layer in a parent TrieNode 
+(<:<) :: Ord b => b -> TrieNode b l -> TrieNode b l
+fresh <:< trie@(TrieNode b _ _) = TrieNode fresh (M.fromList [(b, trie)]) Nothing
 
--- -- | Add an entry into a trie.
--- add :: [branch] -> leaf -> Trie branch leaf -> Trie branch leaf
--- add xs l t = t <> (foldr (TrieNode x ))
---     where
+-- | Construct the leaf of a Trie
+(<:) :: Ord b => b -> l -> TrieNode b l
+fresh <: leaf = TrieNode fresh mempty (Just leaf)
+
+-- | Construct the root of a Trie
+root :: TrieNode b l -> Trie b l
+root trie@(TrieNode b _ _) = TrieRoot $ M.fromList [(b, trie)]
