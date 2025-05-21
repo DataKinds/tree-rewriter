@@ -50,22 +50,22 @@ deriving instance (Show branch, Show leaf) => Show (Trie branch leaf)
 
 -- | Combine two TrieNodes using a given function to combine the leaves.
 -- TODO: this should be possible combineWith :: (b -> c -> d) -> TrieNode a b -> TrieNode a c -> TrieNode a d
-combineWith :: Show a => (b -> b -> b) -> TrieNode a b -> TrieNode a b -> TrieNode a b
+combineWith :: (b -> b -> b) -> TrieNode a b -> TrieNode a b -> TrieNode a b
 combineWith leafOp (TrieNode b1 rest1 leaf1) (TrieNode b2 rest2 leaf2)
     | b1 == b2 = TrieNode b1 
         (M.unionWith (combineWith leafOp) rest1 rest2) 
         (getAlt $ liftA2 leafOp (Alt leaf1) (Alt leaf2))
-    | otherwise = error $ unwords [show b1, "/=", show b2] -- TODO: this _could_ return a TrieRoot if I Could Figure Out How To Type It
+    | otherwise = error "Impossible!" -- TODO: this _could_ return a TrieRoot if I Could Figure Out How To Type It
 
-instance (Show b, Semigroup l) => Semigroup (TrieNode b l) where
+instance (Semigroup l) => Semigroup (TrieNode b l) where
     (<>) :: TrieNode b l -> TrieNode b l -> TrieNode b l
     (<>) = combineWith (<>)
 
-instance  (Show b, Semigroup l) => Semigroup (Trie b l) where
+instance  (Semigroup l) => Semigroup (Trie b l) where
     (<>) :: Trie b l -> Trie b l -> Trie b l
     (TrieRoot rest1) <> (TrieRoot rest2) = TrieRoot $ M.unionWith (<>) rest1 rest2
     
-instance (Ord b, Show b, Semigroup l) => Monoid (Trie b l) where
+instance (Ord b, Semigroup l) => Monoid (Trie b l) where
     mempty = TrieRoot mempty
 
 -- | Trie construction operators. Example usage:
@@ -85,3 +85,16 @@ fresh <: leaf = TrieNode fresh mempty (Just leaf)
 -- | Construct the root of a Trie
 root :: TrieNode b l -> Trie b l
 root trie@(TrieNode b _ _) = TrieRoot $ M.fromList [(b, trie)]
+
+-- Trie usage functions
+
+-- | Add a sequence into a Trie
+add :: (Ord b, Semigroup l) => [b] -> l -> Trie b l -> Trie b l
+add [] _ trie = trie
+add sequ leaf trie = root (go (reverse sequ)) <> trie
+    where go (tip:rest) = foldl (flip (<:<)) (tip <: leaf) rest
+
+-- | Initialize a Trie
+init :: (Ord b, Semigroup l) => [b] -> l -> Trie b l
+init sequ leaf = add sequ leaf mempty
+
