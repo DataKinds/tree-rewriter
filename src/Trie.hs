@@ -11,33 +11,8 @@ import Core
 import Definitions (MatchCondition)
 import qualified Data.Map as M
 import Data.Monoid (Alt(..))
+import Control.Applicative ((<|>))
 
-data Matcher a where
-    Hole :: Matcher a
-    Nest :: Matcher a
-    Unnest :: Matcher a
-    Exactly :: Eq a => a -> Matcher a
-deriving instance Eq a => Eq (Matcher a)
-instance Hashable a => Hashable (Matcher a) where
-    hashWithSalt s Hole = s `hashWithSalt` (0::Int)
-    hashWithSalt s (Exactly a) = s `hashWithSalt` a
-
-data TreeTrie hay tip =  
-      Choice [TreeTrie hay tip] 
-    | Sentinel tip 
-    | Match (Matcher hay) (TreeTrie hay tip)
-
-insertMatchCond :: MatchCondition -> tip -> TreeTrie hay tip -> TreeTrie hay tip
-insertMatchCond = undefined
-
--- instance Hashable hay => Monoid (Trie hay tip) where
---     mempty = Nest mempty 
-
--- instance Hashable hay => Semigroup (Trie hay tip) where
---     (Sentinel x) <> (Sentinel y) = error "Nonsense combo"
---     (Nest xs) <> (Nest ys) = Nest $ unionWith (<>) xs ys
---     (Sentinel x) <> (Nest ys) = Nest $ unionWith (<>) xs ys
---     (Nest xs) <> (Nest ys) = Nest $ unionWith (<>) xs ys
 
 data TrieNode branch leaf where
     TrieNode :: Ord branch => branch -> M.Map branch (TrieNode branch leaf) -> Maybe leaf -> TrieNode branch leaf
@@ -48,13 +23,17 @@ data Trie branch leaf where
 deriving instance (Show branch, Show leaf) => Show (Trie branch leaf)
 
 
+preferJust :: (a -> a -> a) -> Maybe a -> Maybe a -> Maybe a
+preferJust f (Just x) (Just y) = Just $ x `f` y
+preferJust _ a b = a <|> b
+
 -- | Combine two TrieNodes using a given function to combine the leaves.
 -- TODO: this should be possible combineWith :: (b -> c -> d) -> TrieNode a b -> TrieNode a c -> TrieNode a d
 combineWith :: (b -> b -> b) -> TrieNode a b -> TrieNode a b -> TrieNode a b
 combineWith leafOp (TrieNode b1 rest1 leaf1) (TrieNode b2 rest2 leaf2)
-    | b1 == b2 = TrieNode b1 
-        (M.unionWith (combineWith leafOp) rest1 rest2) 
-        (getAlt $ liftA2 leafOp (Alt leaf1) (Alt leaf2))
+    | b1 == b2 = TrieNode b1
+        (M.unionWith (combineWith leafOp) rest1 rest2)
+        (preferJust leafOp leaf1 leaf2)
     | otherwise = error "Impossible!" -- TODO: this _could_ return a TrieRoot if I Could Figure Out How To Type It
 
 instance (Semigroup l) => Semigroup (TrieNode b l) where
@@ -64,12 +43,13 @@ instance (Semigroup l) => Semigroup (TrieNode b l) where
 instance  (Semigroup l) => Semigroup (Trie b l) where
     (<>) :: Trie b l -> Trie b l -> Trie b l
     (TrieRoot rest1) <> (TrieRoot rest2) = TrieRoot $ M.unionWith (<>) rest1 rest2
-    
+
 instance (Ord b, Semigroup l) => Monoid (Trie b l) where
     mempty = TrieRoot mempty
 
 -- | Trie construction operators. Example usage:
--- ('h' <:< 'e' <:< 'l' <:< 'l' <:< 'o' <: 1) <> ('h' <:< 'e' <:< 'c' <:< 'k' <: 2)
+-- (root $ 'h' <:< 'e' <:< 'l' <:< 'l' <:< 'o' <: []) <> (root $ 'h' <:< 'e' <:< 'c' <:< 'k' <: []) <> (root $ 'h' <: [])
+-- ('h' <:< 'e' <:< 'l' <:< 'l' <:< 'o' <: []) <> ('h' <:< 'e' <:< 'c' <:< 'k' <: [])
 -- ('h' <:< 'e'  <: []) <> ('h' <:< 'i' <: [])
 -- ('h'  <: []) <> ('h' <: [])
 infixr 8 <:<, <:
@@ -98,3 +78,16 @@ add sequ leaf trie = root (go (reverse sequ)) <> trie
 init :: (Ord b, Semigroup l) => [b] -> l -> Trie b l
 init sequ leaf = add sequ leaf mempty
 
+-- | Check if a sequence is in a Trie
+elem :: [b] -> Trie b l -> Maybe l
+elem [] _ = Nothing
+elem (tip:rest) (TrieRoot children) = (children M.!? tip) >>= go (tip:rest)
+    where 
+        go :: (Eq b) => [b] -> TrieNode b l -> Maybe l
+        go [] _ = Nothing
+        go (tip:[]) (TrieNode b _ leaf)
+            | tip == b = leaf
+            | otherwise = Nothing
+        go (tip:next:rest) (TrieNode b children _)
+            | tip == b = (children M.!? next) >>= go (next:rest)
+            | otherwise = Nothing
