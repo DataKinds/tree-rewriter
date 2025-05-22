@@ -50,13 +50,15 @@ library
       OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists
   build-depends:
-      base >=4.7 && <5
+      QuickCheck
+    , base >=4.7 && <5
     , containers
     , filepath
     , hashable
     , optics
     , optparse-applicative
     , parsec
+    , pretty-simple
     , template-haskell
     , text
     , text-icu
@@ -83,13 +85,15 @@ executable rosin
       OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -O3 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      QuickCheck
+    , base >=4.7 && <5
     , containers
     , filepath
     , hashable
     , optics
     , optparse-applicative
     , parsec
+    , pretty-simple
     , template-haskell
     , text
     , text-icu
@@ -118,7 +122,8 @@ test-suite rosin-test
       OverloadedLabels
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      QuickCheck
+    , base >=4.7 && <5
     , containers
     , filepath
     , hashable
@@ -126,6 +131,7 @@ test-suite rosin-test
     , optics
     , optparse-applicative
     , parsec
+    , pretty-simple
     , template-haskell
     , text
     , text-icu

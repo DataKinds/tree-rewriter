@@ -32,6 +32,8 @@ dependencies:
 - unordered-containers
 - hashable
 - optics
+- pretty-simple
+- QuickCheck
 
 ghc-options:
 - -Wall

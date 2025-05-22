@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Trie where
 import Data.HashMap.Strict (HashMap, unionWith)
 import Data.Hashable
@@ -12,15 +13,37 @@ import Definitions (MatchCondition)
 import qualified Data.Map as M
 import Data.Monoid (Alt(..))
 import Control.Applicative ((<|>))
+import GHC.Generics (Generic)
+import Test.QuickCheck
+import Data.Maybe (isJust, fromJust)
 
 
 data TrieNode branch leaf where
     TrieNode :: Ord branch => branch -> M.Map branch (TrieNode branch leaf) -> Maybe leaf -> TrieNode branch leaf
 deriving instance (Show branch, Show leaf) => Show (TrieNode branch leaf)
+deriving instance Eq leaf => Eq (TrieNode branch leaf)
 
 data Trie branch leaf where
     TrieRoot :: Ord branch => M.Map branch (TrieNode branch leaf) -> Trie branch leaf
 deriving instance (Show branch, Show leaf) => Show (Trie branch leaf)
+deriving instance Eq leaf => Eq (Trie branch leaf)
+
+newtype SimpleChar = SimpleChar Char deriving (Eq, Ord, Show)
+
+instance Arbitrary SimpleChar where
+    arbitrary = SimpleChar <$> chooseEnum ('a', 'd')
+
+arbitrarySingleSeqTrie :: (Ord branch, Arbitrary branch, Arbitrary leaf, Semigroup leaf) => Gen (Trie branch leaf)
+arbitrarySingleSeqTrie = do
+    sequ :: [branch] <- listOf arbitrary
+    leaf :: leaf <- arbitrary
+    pure $ Trie.init sequ leaf
+
+instance (Ord branch, Arbitrary branch, Arbitrary leaf, Semigroup leaf) => Arbitrary (Trie branch leaf) where
+    arbitrary = do
+        trie <- arbitrarySingleSeqTrie
+        tries <- listOf arbitrarySingleSeqTrie
+        pure $ foldr (<>) trie tries
 
 
 preferJust :: (a -> a -> a) -> Maybe a -> Maybe a -> Maybe a
@@ -67,6 +90,21 @@ root :: TrieNode b l -> Trie b l
 root trie@(TrieNode b _ _) = TrieRoot $ M.fromList [(b, trie)]
 
 -- Trie usage functions
+
+-- | Convert a list of sequence, leaf pairs to a Trie
+toTrie :: (Ord b, Semigroup l) => [([b], l)] -> Trie b l
+toTrie = mconcat . map (uncurry Trie.init)
+
+-- | From this node, what suffixes are below it?
+suffixes :: (Ord b, Semigroup l) => TrieNode b l -> [[b]]
+suffixes (TrieNode b m _)
+    | null m = [[b]]
+    | otherwise = [b:suffix | suffix <- concatMap suffixes (M.elems m)] 
+
+-- | Convert a Trie back to a list of sequence, leaf pairs
+fromTrie :: (Ord b, Semigroup l) => Trie b l -> [([b], l)]
+fromTrie trie@(TrieRoot m) = let sxs = concatMap suffixes (M.elems m) 
+    in zip sxs (fromJust . flip Trie.elem trie <$> sxs)
 
 -- | Add a sequence into a Trie
 add :: (Ord b, Semigroup l) => [b] -> l -> Trie b l -> Trie b l
