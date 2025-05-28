@@ -7,6 +7,7 @@ import Core (Tree, RValue, rebranch)
 import qualified Multiset as MS
 import Trie
 import Data.Maybe
+import Invariants
 
 
 parseOrDie :: String -> T.Text -> IO [Tree RValue]
@@ -37,14 +38,6 @@ shouldBecomeWithBag tree transformed bag = do
     (unzipper . Runtime.zipper $ runtime) `shouldBe` trans
     Runtime.multiset runtime `shouldBe` bag'
 
-prop_FromTrieEqualsToTrie :: (Ord b, Eq a) => Trie b [a] -> Bool
-prop_FromTrieEqualsToTrie trie = trie == toTrie (fromTrie trie)
-
-prop_TrieRespectsAdditionOfSingleElem :: Ord b => b -> [b] -> Trie b [a] -> Bool
-prop_TrieRespectsAdditionOfSingleElem tip sequ trie = isJust $ Trie.elem (tip:sequ) (add (tip:sequ) [] trie)
-
-prop_TrieRespectsAdditionOfSingleSimpleChar :: SimpleChar -> [SimpleChar] -> Trie SimpleChar [Int] -> Bool
-prop_TrieRespectsAdditionOfSingleSimpleChar = prop_TrieRespectsAdditionOfSingleElem
 
 main :: IO ()
 main = hspec $ do
@@ -132,4 +125,6 @@ main = hspec $ do
             "(/(floating) regex/ ~> \"$> $1 $<\") \"this should match my floating regex!\"" `shouldBecome` "\"! floating this should match my \""
     describe "trie property tests" $ do
         prop "add works" prop_TrieRespectsAdditionOfSingleSimpleChar
-        prop "fromTrie and toTrie work" (prop_FromTrieEqualsToTrie :: Trie [SimpleChar] [()] -> Bool)
+        prop "toTrie . fromTrie" (toTrieInverseIsFromTrie :: Trie [SimpleChar] [()] -> Bool)
+        prop "toTrie . fromTrie" (toTrieInverseIsFromTrie :: Trie () [()] -> Bool)
+        prop "fromTrie . toTrie" (fromTrieInverseIsToTrie :: [([()], ())] -> Bool)
