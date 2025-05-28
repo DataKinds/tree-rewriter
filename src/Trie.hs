@@ -95,15 +95,18 @@ root trie@(TrieNode b _ _) = TrieRoot $ M.fromList [(b, trie)]
 toTrie :: (Ord b, Semigroup l) => [([b], l)] -> Trie b l
 toTrie = mconcat . map (uncurry Trie.init)
 
--- | From this node, what suffixes are below it?
+-- | From this node, what suffixes ending in leaves are below it?
 suffixes :: (Ord b, Semigroup l) => TrieNode b l -> [[b]]
-suffixes (TrieNode b m _)
+suffixes (TrieNode b m l)
     | null m = [[b]]
-    | otherwise = [b:suffix | suffix <- concatMap suffixes (M.elems m)] 
+    | otherwise = case l of
+        Just _ -> [b]:[b:suffix | suffix <- concatMap suffixes (M.elems m)] 
+        Nothing -> [b:suffix | suffix <- concatMap suffixes (M.elems m)] 
 
 -- | Convert a Trie back to a list of sequence, leaf pairs
 fromTrie :: (Ord b, Semigroup l) => Trie b l -> [([b], l)]
-fromTrie trie@(TrieRoot m) = let sxs = concatMap suffixes (M.elems m) 
+fromTrie trie@(TrieRoot m) = let 
+    sxs = concatMap suffixes (M.elems m) 
     in zip sxs (fromJust . flip Trie.elem trie <$> sxs)
 
 -- | Add a sequence into a Trie

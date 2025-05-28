@@ -124,7 +124,9 @@ main = hspec $ do
         it "supports pre and post match groups" $ do
             "(/(floating) regex/ ~> \"$> $1 $<\") \"this should match my floating regex!\"" `shouldBecome` "\"! floating this should match my \""
     describe "trie property tests" $ do
-        prop "add works" prop_TrieRespectsAdditionOfSingleSimpleChar
-        prop "toTrie . fromTrie" (toTrieInverseIsFromTrie :: Trie [SimpleChar] [()] -> Bool)
-        prop "toTrie . fromTrie" (toTrieInverseIsFromTrie :: Trie () [()] -> Bool)
-        prop "fromTrie . toTrie" (fromTrieInverseIsToTrie :: [([()], ())] -> Bool)
+        prop "chars can be added to tree" (addOnTrieSupportsElemCheck :: TrieWithElemPred SimpleChar [Int])
+        prop "units can be added to tree" (addOnTrieSupportsElemCheck :: TrieWithElemPred () [Int])
+        prop "toTrie . fromTrie on chars" (toTrieInverseIsFromTrie :: Trie [SimpleChar] [()] -> Bool)
+        prop "toTrie . fromTrie on units" (toTrieInverseIsFromTrie :: Trie () [()] -> Bool)
+        prop "fromTrie . toTrie on chars" (fromTrieInverseIsToTrie :: [([SimpleChar], ())] -> Bool)
+        prop "fromTrie . toTrie on units" (fromTrieInverseIsToTrie :: [([()], ())] -> Bool)
