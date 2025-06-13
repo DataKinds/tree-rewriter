@@ -43,7 +43,7 @@ import Optics.State
 import Optics
 
 
--- Runtime handles the state of the rewrite head processing the input data 
+-- | Runtime handles the state of the rewrite head processing the input data 
 data Runtime = Runtime {
     -- What file are we executing
     path :: String,
@@ -68,66 +68,29 @@ emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules empt
     where emptyRules = []
 
 
--- Add a new tree rewriting rule into the runtime
+-- | Add a new tree rewriting rule into the runtime
 addRule :: Monad m => MatchRule -> RuntimeT m
-addRule rule = modifying #rules (rule:)
-
--- Add a new single use tree rewriting rule into the runtime
-addSingleUseRule :: Monad m => MatchRule -> RuntimeT m
-addSingleUseRule rule = modifying #singleUseRules (rule:)
+addRule rule = case useCount rule of
+    UseOnce -> modifying #singleUseRules (rule:)
+    UseMany -> modifying #rules (rule:)
 
 -- Execute a Rosin runtime --
 
--- Check the current position of the rewrite head. If it's pointing to a definition, consume it.
+-- | Check the current position of the rewrite head. If it's pointing to a definition, consume it.
 -- Gives back the count of definitions consumed.
 eatDef :: Monad m => RuntimeTV m Int
 eatDef = do
     subject <- gets (Z.look . Runtime.zipper)
     case recognizeDef subject of
         -- Add the rule definition to the runtime and snip it out from the input tree
-        Just td -> case useCount td of
-            UseOnce -> do
-                addSingleUseRule td
-                modifying #zipper (Z.nextDfs . Z.dropFocus)
-                pure 1
-            UseMany -> do
-                addRule td
-                modifying #zipper (`Z.put` branch [sym "defined", str $ show td])
-                pure 1
+        Just td -> do
+            addRule td
+            modifying #zipper (Z.nextDfs . Z.dropFocus)
+            pure 1
         Nothing -> pure 0
 
--- Execute a given builtin. The `args` passed in are the args passed to the builtin.
-dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
-dispatchBuiltin args = \case
-    "version" -> modifying #zipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
-    "bag" -> do
-        bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . Runtime.multiset)
-        modifying #zipper (`Z.put` bag)
-    "getLine" -> do
-        line <- liftIO TIO.getLine
-        modifying #zipper (`Z.put` tstr line)
-    "print" -> do
-        let printer = \case
-                Leaf (RString input) -> TIO.putStrLn input
-                other -> print other
-        liftIO $ mapM_ printer args
-        modifying #zipper (Z.nextDfs . Z.dropFocus)
-    "parse" -> case args of
-        Leaf (RString input):_ -> do
-            filepath <- gets Runtime.path
-            case parse (T.unpack input) (filepath++"<eval>") of
-                Left err -> modifying #zipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
-                Right success -> modifying #zipper (`Z.spliceRight` success)
-        _ -> pure ()
-    "cat" -> case args of
-        Leaf (RString path):_ -> do
-            pathContext <- gets (takeDirectory . Runtime.path)
-            fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
-            modifying #zipper (`Z.put` (Leaf . RString $ fileContents))
-        _ -> pure ()
-    shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
--- Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
+-- | Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
 eatBuiltin :: RuntimeTV IO Int
 eatBuiltin = do
     subject <- gets (Z.look . Runtime.zipper)
@@ -136,6 +99,37 @@ eatBuiltin = do
             dispatchBuiltin args name
             pure 1
         Nothing -> pure 0
+    where
+        -- | Execute a given builtin. The `args` passed in are the args passed to the builtin.
+        dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
+        dispatchBuiltin args = \case
+            "version" -> modifying #zipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
+            "bag" -> do
+                bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . Runtime.multiset)
+                modifying #zipper (`Z.put` bag)
+            "getLine" -> do
+                line <- liftIO TIO.getLine
+                modifying #zipper (`Z.put` tstr line)
+            "print" -> do
+                let printer = \case
+                        Leaf (RString input) -> TIO.putStrLn input
+                        other -> print other
+                liftIO $ mapM_ printer args
+                modifying #zipper (Z.nextDfs . Z.dropFocus)
+            "parse" -> case args of
+                Leaf (RString input):_ -> do
+                    filepath <- gets Runtime.path
+                    case parse (T.unpack input) (filepath++"<eval>") of
+                        Left err -> modifying #zipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
+                        Right success -> modifying #zipper (`Z.spliceRight` success)
+                _ -> pure ()
+            "cat" -> case args of
+                Leaf (RString path):_ -> do
+                    pathContext <- gets (takeDirectory . Runtime.path)
+                    fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
+                    modifying #zipper (`Z.put` (Leaf . RString $ fileContents))
+                _ -> pure ()
+            shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 thrd :: (a, b, c) -> c
 thrd (_,_,c) = c
