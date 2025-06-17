@@ -13,7 +13,7 @@ module Recognizers where
 
 import qualified Data.Text as T
 import Core (Tree (..), RValue (..), rebranch)
-import Definitions (MatchRule (..), MatchCondition (..), MatchEffect (..), UseCount (..))
+import RuntimeEffects (MatchRule (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)

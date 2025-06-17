@@ -2,7 +2,8 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import qualified Data.Text as T
 import Parser (parse)
-import Runtime (Runtime (multiset), emptyRuntime, run, zipper, unzipper)
+import Runtime 
+import RuntimeEffects
 import Core (Tree, RValue, rebranch)
 import qualified Multiset as MS
 import Trie
@@ -26,7 +27,7 @@ shouldBecome :: HasCallStack => T.Text -> T.Text -> Expectation
 shouldBecome tree transformed = do
     tree' <- runProg "test input" $ "(defined :x ~>)" `T.append` tree
     trans <- parseOrDie "test assertion" transformed
-    (unzipper . Runtime.zipper $ tree') `shouldBe` trans
+    (unzipper . runtimeZipper $ tree') `shouldBe` trans
 
 shouldBecomeWithBag :: HasCallStack => T.Text -> T.Text -> [(T.Text, Int)] -> Expectation
 shouldBecomeWithBag tree transformed bag = do
@@ -35,8 +36,8 @@ shouldBecomeWithBag tree transformed bag = do
     bagTrees <- mapM (parseOrDie "bag" . fst) bag
     let bagCounts = snd <$> bag
     let bag' = MS.fromList $ zip (rebranch <$> bagTrees) bagCounts
-    (unzipper . Runtime.zipper $ runtime) `shouldBe` trans
-    Runtime.multiset runtime `shouldBe` bag'
+    (unzipper . runtimeZipper $ runtime) `shouldBe` trans
+    runtimeMultiset runtime `shouldBe` bag'
 
 
 main :: IO ()

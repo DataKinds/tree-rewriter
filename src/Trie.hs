@@ -9,7 +9,6 @@ module Trie where
 import Data.HashMap.Strict (HashMap, unionWith)
 import Data.Hashable
 import Core
-import Definitions (MatchCondition)
 import qualified Data.Map as M
 import Data.Monoid (Alt(..))
 import Control.Applicative ((<|>))

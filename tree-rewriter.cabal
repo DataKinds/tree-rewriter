@@ -26,11 +26,12 @@ library
   exposed-modules:
       Core
       Core.DSL
-      Definitions
+      Core.Traversals
       Multiset
       Parser
       Recognizers
       Runtime
+      RuntimeEffects
       Trie
       Zipper
   other-modules:

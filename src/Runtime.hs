@@ -32,7 +32,7 @@ import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import Definitions (MatchCondition (..), MatchRule, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
+import RuntimeEffects (MatchCondition (..), MatchRule, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (find)
 import Multiset (cleanUp)
@@ -41,32 +41,14 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Functor.Identity (Identity(..))
 import Optics.State
 import Optics
+import RuntimeEffects
 
-
--- | Runtime handles the state of the rewrite head processing the input data 
-data Runtime = Runtime {
-    -- What file are we executing
-    path :: String,
-    -- Do we print out debug information?
-    verbose :: Bool,
-    -- What rewriting rules are active?
-    rules :: [MatchRule],
-    -- What rewriting lambdas are active?
-    singleUseRules :: [MatchRule],
-    -- Where are we in the data tree?
-    zipper :: Z.Zipper RValue,
-    -- Multiset state!
-    multiset :: MS.Multiset (Tree RValue)
-} deriving (Show)
-makeFieldLabelsNoPrefix ''Runtime
-type RuntimeTV m = StateT Runtime m
-type RuntimeT m = RuntimeTV m ()
-type RuntimeV = State Runtime
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
     where emptyRules = []
 
+-- Execute a Rosin runtime --
 
 -- | Add a new tree rewriting rule into the runtime
 addRule :: Monad m => MatchRule -> RuntimeT m
@@ -74,13 +56,11 @@ addRule rule = case useCount rule of
     UseOnce -> modifying #singleUseRules (rule:)
     UseMany -> modifying #rules (rule:)
 
--- Execute a Rosin runtime --
-
 -- | Check the current position of the rewrite head. If it's pointing to a definition, consume it.
 -- Gives back the count of definitions consumed.
 eatDef :: Monad m => RuntimeTV m Int
 eatDef = do
-    subject <- gets (Z.look . Runtime.zipper)
+    subject <- gets (Z.look . runtimeZipper)
     case recognizeDef subject of
         -- Add the rule definition to the runtime and snip it out from the input tree
         Just td -> do
@@ -93,7 +73,7 @@ eatDef = do
 -- | Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
 eatBuiltin :: RuntimeTV IO Int
 eatBuiltin = do
-    subject <- gets (Z.look . Runtime.zipper)
+    subject <- gets (Z.look . runtimeZipper)
     case recognizeBuiltin subject of
         Just (BuiltinRule name args) -> do 
             dispatchBuiltin args name
@@ -105,7 +85,7 @@ eatBuiltin = do
         dispatchBuiltin args = \case
             "version" -> modifying #zipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
             "bag" -> do
-                bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . Runtime.multiset)
+                bag <- gets (branch . map (\(x, n) -> branch [x, num n]) . MS.toList . runtimeMultiset)
                 modifying #zipper (`Z.put` bag)
             "getLine" -> do
                 line <- liftIO TIO.getLine
@@ -118,104 +98,37 @@ eatBuiltin = do
                 modifying #zipper (Z.nextDfs . Z.dropFocus)
             "parse" -> case args of
                 Leaf (RString input):_ -> do
-                    filepath <- gets Runtime.path
+                    filepath <- gets runtimePath
                     case parse (T.unpack input) (filepath++"<eval>") of
                         Left err -> modifying #zipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
                         Right success -> modifying #zipper (`Z.spliceRight` success)
                 _ -> pure ()
             "cat" -> case args of
                 Leaf (RString path):_ -> do
-                    pathContext <- gets (takeDirectory . Runtime.path)
+                    pathContext <- gets (takeDirectory . runtimePath)
                     fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
                     modifying #zipper (`Z.put` (Leaf . RString $ fileContents))
                 _ -> pure ()
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
-thrd :: (a, b, c) -> c
-thrd (_,_,c) = c
-
-hoistState :: (Monad m) => State s a -> StateT s m a
-hoistState = state . runState
-
--- Apply matching conditions from a definition according to a given runtime.
--- False if we fail to apply a condition. True if they all apply.
-tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
-tryBindConditions [] _ = pure True
-tryBindConditions (cond:xs) r = do
-    success <- applyMatchCondition cond r
-    go <- tryBindConditions xs r
-    pure $ success && go
-
--- Apply matching conditions from a list of definitions.
--- Gives back the first definition where every condition matched, if it exists.
-tryDefinitions :: [MatchRule] -> Runtime -> Binder_ (Maybe MatchRule)
-tryDefinitions defs r = let
-    bindActions = [(d, (`tryBindConditions` r) . matchCondition $ d) | d <- defs]
-    binded = second (`runState` emptyBinder) <$> bindActions
-    success = find (fst . snd) binded
-    in do
-        maybe (pure ()) (put . snd . snd) success
-        pure (fst <$> success)
-
--- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
--- Gives back the first definition where every condition matched, if it exists.
-tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
-tryDefinitionsAt defs r subject = let
-    r' = over #zipper (`Z.put` subject) r
-    in tryDefinitions defs r'
-
-
-treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
-treeMapReduce mapper input@(Leaf _) = mapper input
-treeMapReduce mapper input@(Branch xs) = sconcat $ mapper input :| (treeMapReduce mapper <$> xs)
-
--- Bind variables associated with a match condition, or fail out and return False
-applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
-applyMatchCondition (MultisetPattern ms) r = let
-    pocket = Runtime.multiset r
-    in do
-        ms' <- MS.traverseValues (fmap rebranch . betaReduce) ms
-        pure $ MS.allInside ms' pocket -- TODO: pattern match!
-applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
-    rules = Runtime.rules r
-    subject = Z.look . Runtime.zipper $ r
-    -- construct the eager matcher
-    eagerMatcherCallStep = Any . isJust . fst . flip runState binding <$> tryDefinitionsAt rules r
-    eagerMatcherDefStep = Any . isJust . recognizeDef 
-    eagerMatcherBuiltinStep = Any . isJust . recognizeBuiltin 
-    eagerMatcherStep i = eagerMatcherCallStep i <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
-    eagerMatcher = treeMapReduce eagerMatcherStep
-    in hoistState $ tryApply (getAny . eagerMatcher) subject pat
-
--- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
-applyMatchEffect :: MatchEffect -> RuntimeTV Binder_ ()
-applyMatchEffect (MultisetPush ms) = do
-    ms' <- lift $ MS.traverseValues (fmap rebranch . betaReduce) ms
-    modifying #multiset (MS.putMany ms')
-applyMatchEffect (TreeReplacement []) = modifying #zipper Z.dropFocus
-applyMatchEffect (TreeReplacement template) = do
-    binder <- lift get
-    let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
-    modifying #zipper (`Z.spliceIn` concat rewritten)
-
 -- Runtime debug printing functions
 printZipper :: String -> RuntimeT IO
-printZipper l = gets Runtime.verbose >>= \v -> when v $ do
-    zipper <- gets Runtime.zipper
+printZipper l = gets runtimeVerbose >>= \v -> when v $ do
+    zipper <- gets runtimeZipper
     lift $ putStr (l ++ ": ")
     lift $ print zipper
 printLog :: String -> RuntimeT IO
-printLog l = gets Runtime.verbose >>= \v -> when v . lift . putStrLn $ l
+printLog l = gets runtimeVerbose >>= \v -> when v . lift . putStrLn $ l
 
 -- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
 applyDefs :: RuntimeTV IO Int
 applyDefs = do
-    onceDefs <- gets Runtime.singleUseRules
-    repeatDefs <- gets Runtime.rules
+    onceDefs <- gets runtimeSingleUseRules
+    repeatDefs <- gets runtimeRules
     printLog $ "Once defs: " ++ show onceDefs
     printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
-    gets Runtime.multiset >>= \p -> printLog $ "Pocket: " ++ show p
+    gets runtimeMultiset >>= \p -> printLog $ "Pocket: " ++ show p
     appliedOnceRule <- applyFirstMatchingDefinition onceDefs
     printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
@@ -273,7 +186,7 @@ fixEat = do
 -- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
 runStep :: RuntimeTV IO (Int, Bool)
 runStep = do
-    verbose <- gets Runtime.verbose
+    verbose <- gets runtimeVerbose
     when verbose (lift $ putStrLn "== STARTING STEP ==")
     printZipper "Pre-step"
 
@@ -288,7 +201,7 @@ runStep = do
 
     -- Give back the value we use to assess termination
     printZipper "Pre-termination"
-    atTop <- gets ((== []) . Z._Ups . Runtime.zipper)
+    atTop <- gets ((== []) . Z._Ups . runtimeZipper)
     when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
     pure (rulesApplied, atTop)
 
@@ -322,5 +235,5 @@ unzipper z = case Z.treeFromZipper z of
 runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [MatchRule])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
-    pure (unzipper . Runtime.zipper $ out, Runtime.rules out)
+    pure (unzipper . runtimeZipper $ out, runtimeRules out)
   

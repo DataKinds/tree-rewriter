@@ -21,19 +21,19 @@ empty = Multiset M.empty
 null :: Ord a => Multiset a -> Bool
 null = M.null . unmultiset
 
--- Is this element inside the multiset in a sufficient quantity? 
+-- | Is this element inside the multiset in a sufficient quantity? 
 inside :: Ord a => (a, Int) -> Multiset a -> Bool
 inside (x, n) = maybe False (n <=) . M.lookup x . unmultiset 
 
--- Are these elements inside the multiset in a sufficient quantity? 
+-- | Are these elements inside the multiset in a sufficient quantity? 
 allInside :: Ord a => Multiset a -> Multiset a -> Bool
 allInside xns ms = all (`inside` ms) (toList xns)
 
--- Take out this many copies of this element from our multiset, if we can!
+-- | Take out this many copies of this element from our multiset, if we can!
 grab :: Ord a => (a, Int) -> Multiset a -> Maybe (Multiset a)
 grab xn@(x,n) ms = if inside xn ms then Just . Multiset . M.adjust (subtract n) x . unmultiset $ ms else Nothing
 
--- Take out this many copies of these elements from our multiset, if we can!
+-- | Take out this many copies of these elements from our multiset, if we can!
 grabMany :: Ord a => Multiset a -> Multiset a -> Maybe (Multiset a)
 grabMany xns ms = Multiset <$> foldM (\m xn -> unmultiset <$> grab xn (Multiset m)) ms' xns'
     where ms' = unmultiset ms; xns' = toList xns
@@ -41,17 +41,19 @@ grabMany xns ms = Multiset <$> foldM (\m xn -> unmultiset <$> grab xn (Multiset 
 grabManyRaw :: Ord a => Multiset a -> Multiset a -> Multiset a
 grabManyRaw xns ms = Multiset $ M.unionWith (-) (unmultiset ms) (unmultiset xns)
 
--- Put this many copies of these elements into our multiset
+-- | Put this many copies of these elements into our multiset
 putMany :: Ord a => Multiset a -> Multiset a -> Multiset a
 putMany xns ms = Multiset $ M.unionWith (+) (unmultiset xns) (unmultiset ms)
 
--- Forget we were holding onto something if we have none of it
+-- | Forget we were holding onto something if we have none of it
 cleanUp :: Ord a => Multiset a -> Multiset a
 cleanUp = Multiset . M.filter (/= 0) . unmultiset
 
+-- | Map over all of the values in the multiset
 mapValues :: (Ord a, Ord b) => (a -> b) -> Multiset a -> Multiset b 
 mapValues f = Multiset . M.mapKeys f . unmultiset  
 
+-- | Traverse over all the values in the multiset, running effects in order
 traverseValues :: (Applicative f, Ord a, Ord b) => (a -> f b) -> Multiset a -> f (Multiset b)
 traverseValues f = fmap Multiset . traverse' f . unmultiset  
     where
