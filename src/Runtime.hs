@@ -11,54 +11,45 @@
 module Runtime where
 
 import Core
-    ( betaReduce,
-      emptyBinder,
-      rebranch,
-      tryApply,
-      Binder_,
+    ( emptyBinder,
       RValue(RString),
       Tree(..) )
-import Core.DSL ( sym, str, num, branch, pvar, regex, tstr )
+import Core.DSL ( str, num, branch, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), gets, execStateT, State, runState, state, get, put)
+import Control.Monad.Trans.State (StateT (runStateT), gets, execStateT, runState, get, put)
 import Control.Monad (unless, when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
 import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
-import Data.Bifunctor (Bifunctor(second))
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
-import RuntimeEffects (MatchCondition (..), MatchRule, UseCount (..), MatchEffect (..), useCount, matchCondition, matchEffect)
 import Control.Monad.IO.Class (MonadIO(liftIO))
-import Data.Foldable (find)
 import Multiset (cleanUp)
-import Data.Semigroup (Semigroup(sconcat), Any (..))
-import Data.List.NonEmpty (NonEmpty (..))
 import Data.Functor.Identity (Identity(..))
 import Optics.State
-import Optics
 import RuntimeEffects
-
+import Optics
+import Data.Functor (void)
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty
+emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty 0 False
     where emptyRules = []
 
 -- Execute a Rosin runtime --
 
 -- | Add a new tree rewriting rule into the runtime
-addRule :: Monad m => MatchRule -> RuntimeT m
+addRule :: Monad m => MatchRule -> RuntimeM m ()
 addRule rule = case useCount rule of
     UseOnce -> modifying #singleUseRules (rule:)
     UseMany -> modifying #rules (rule:)
 
 -- | Check the current position of the rewrite head. If it's pointing to a definition, consume it.
 -- Gives back the count of definitions consumed.
-eatDef :: Monad m => RuntimeTV m Int
+eatDef :: Monad m => RuntimeM m Int
 eatDef = do
     subject <- gets (Z.look . runtimeZipper)
     case recognizeDef subject of
@@ -71,7 +62,7 @@ eatDef = do
 
 
 -- | Check the current position of the rewrite head. If it's pointing to a builtin, rewrite it and execute any effects.
-eatBuiltin :: RuntimeTV IO Int
+eatBuiltin :: RuntimeM IO Int
 eatBuiltin = do
     subject <- gets (Z.look . runtimeZipper)
     case recognizeBuiltin subject of
@@ -81,7 +72,7 @@ eatBuiltin = do
         Nothing -> pure 0
     where
         -- | Execute a given builtin. The `args` passed in are the args passed to the builtin.
-        dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeT IO
+        dispatchBuiltin :: [Tree RValue] -> T.Text -> RuntimeM IO ()
         dispatchBuiltin args = \case
             "version" -> modifying #zipper (`Z.put` str "v0.0.0. That's right, We Aren't Semver Yet!")
             "bag" -> do
@@ -112,16 +103,16 @@ eatBuiltin = do
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 -- Runtime debug printing functions
-printZipper :: String -> RuntimeT IO
+printZipper :: String -> RuntimeM IO ()
 printZipper l = gets runtimeVerbose >>= \v -> when v $ do
     zipper <- gets runtimeZipper
     lift $ putStr (l ++ ": ")
     lift $ print zipper
-printLog :: String -> RuntimeT IO
+printLog :: String -> RuntimeM IO ()
 printLog l = gets runtimeVerbose >>= \v -> when v . lift . putStrLn $ l
 
 -- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
-applyDefs :: RuntimeTV IO Int
+applyDefs :: RuntimeM IO Int
 applyDefs = do
     onceDefs <- gets runtimeSingleUseRules
     repeatDefs <- gets runtimeRules
@@ -139,7 +130,7 @@ applyDefs = do
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
         where
             -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
-            applyFirstMatchingDefinition :: [MatchRule] -> RuntimeTV IO (Maybe MatchRule)
+            applyFirstMatchingDefinition :: [MatchRule] -> RuntimeM IO (Maybe MatchRule)
             applyFirstMatchingDefinition defs = do
                 runtime <- get
                 let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
@@ -154,7 +145,7 @@ applyDefs = do
                     Nothing -> pure Nothing
 
 -- Run `applyDefs` until there's no point...
-fixApplyDefs :: RuntimeTV IO Int
+fixApplyDefs :: RuntimeM IO Int
 fixApplyDefs = do
     n <- applyDefs
     if n == 0
@@ -165,7 +156,7 @@ fixApplyDefs = do
             pure $ n + tc
 
 -- Run `applyDefs`, `eatDef`, and `eatBuiltin` until there's no point...
-fixEat :: RuntimeTV IO Int
+fixEat :: RuntimeM IO Int
 fixEat = do
     n <- eatBuiltin -- put, nextDfs . dropFocus, spliceRight
     n' <- fixApplyDefs
@@ -180,52 +171,41 @@ fixEat = do
             pure $ count + tc
 
 -- Carry out one step of Rosin's execution. This essentially carries out the following:
---   1) We check for a definition or a builtin at the current rewrite head and ingest it if there's one there
 --   2) We try to apply our rewrite rules at the current rewrite head as many times as possible. Between steps we repeat 1, checking for defs and builtins.
 --   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
--- Gives back (the amount of rules applied, whether we jumped back to the top of the tree). 
-runStep :: RuntimeTV IO (Int, Bool)
+-- Gives back the amount of rules applied in the final step (this should ALWAYS be 0!)
+runStep :: RuntimeM IO Int
 runStep = do
     verbose <- gets runtimeVerbose
     when verbose (lift $ putStrLn "== STARTING STEP ==")
     printZipper "Pre-step"
 
-    -- Begin 1 & 2
+    -- Check for a definition or a builtin at the current rewrite head, ingest it if there's one there. Repeat this as many times as it will apply.
     count <- fixApplyDefs
     count' <- fixEat
     printZipper "Post-eat"
 
     -- Begin 3 if we never matched anything. Matching stuff usually moves our zipper forward, so we don't move if we matched
     let rulesApplied = count + count'
+    when (rulesApplied /= 0) $ assign #areWeDoneYet False
     when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
 
-    -- Give back the value we use to assess termination
+    -- Let's stop executing if our "done" flag is set and we're back at the top of the input tree
     printZipper "Pre-termination"
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    when verbose . lift . putStrLn . concat $ ["Rules applied: ", show rulesApplied, "; at top? ", show atTop]
-    pure (rulesApplied, atTop)
+    done <- gets runtimeAreWeDoneYet
+    case (atTop, done) of
+        (False, _) -> runStep
+        (True, False) -> assign #areWeDoneYet True >> runStep
+        (True, True) -> pure rulesApplied
 
+-- | Sets up the Runtime to take control of its own execution through runStep.
+firstStep :: RuntimeM IO ()
+firstStep = assign #areWeDoneYet True >> assign #epoch 0 >> void runStep
 
--- Run `runStep` until there's no point...
-fixStep :: RuntimeT IO
-fixStep = go 0
-    where
-        readyToStop = do
-            (count, reset) <- runStep
-            if count > 0 then
-                go count
-            else 
-                unless reset readyToStop
-        go count = do
-            (count', reset) <- runStep
-            if reset
-                then readyToStop
-                else go $ count + count'
-
-
--- Executes a Rosin runtime
+-- | Executes a Rosin runtime
 run :: Runtime -> IO Runtime
-run = execStateT fixStep
+run = execStateT firstStep
 
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
 unzipper z = case Z.treeFromZipper z of

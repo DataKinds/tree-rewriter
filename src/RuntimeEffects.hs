@@ -65,12 +65,14 @@ data Runtime = Runtime {
     -- Where are we in the data tree?
     runtimeZipper :: Z.Zipper RValue,
     -- Multiset state!
-    runtimeMultiset :: MS.Multiset (Tree RValue)
+    runtimeMultiset :: MS.Multiset (Tree RValue),
+    -- Epoch number: incremented every time we apply a rule or change our state
+    runtimeEpoch :: Int,
+    -- Done marker: are we ready to finish execution?
+    runtimeAreWeDoneYet :: Bool
 } deriving (Show)
 makeFieldLabels ''Runtime
-type RuntimeTV m = StateT Runtime m
-type RuntimeT m = RuntimeTV m ()
-type RuntimeV = State Runtime
+type RuntimeM m = StateT Runtime m
 
 
 instance Semigroup MatchRule where
@@ -115,7 +117,7 @@ tryDefinitionsAt defs r subject = let
 
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition.
-applyMatchEffect :: MatchEffect -> RuntimeTV Binder_ ()
+applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
 applyMatchEffect (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap rebranch . betaReduce) ms
     modifying #multiset (MS.putMany ms')
