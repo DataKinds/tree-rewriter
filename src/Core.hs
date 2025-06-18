@@ -14,7 +14,7 @@ module Core where
 import qualified Data.Text as T
 import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, gets, StateT )
+import Control.Monad.Trans.State.Lazy ( State, gets, StateT, runStateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
@@ -136,6 +136,12 @@ data Binder = Binder {
 makeFieldLabelsNoPrefix ''Binder
 type BinderT = StateT Binder -- Binder monad
 type Binder_ = BinderT Identity
+
+runBinderT :: BinderT m a -> Binder -> m (a, Binder)
+runBinderT = runStateT
+runBinder :: Binder_ a -> Binder -> (a, Binder)
+runBinder st = runIdentity . runStateT st
+
 
 emptyBinder :: Binder
 emptyBinder = Binder {

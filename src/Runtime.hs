@@ -13,14 +13,14 @@ module Runtime where
 import Core
     ( emptyBinder,
       RValue(RString),
-      Tree(..) )
+      Tree(..), Binder_, runBinder )
 import Core.DSL ( str, num, branch, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), gets, execStateT, runState, get, put)
-import Control.Monad (unless, when)
+import Control.Monad.Trans.State (gets, execStateT, mapStateT)
+import Control.Monad (when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
 import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
@@ -29,11 +29,10 @@ import Parser (parse)
 import Data.Bool (bool)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Multiset (cleanUp)
-import Data.Functor.Identity (Identity(..))
 import Optics.State
 import RuntimeEffects
-import Optics
 import Data.Functor (void)
+import Data.Foldable (for_)
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty 0 False
@@ -120,29 +119,17 @@ applyDefs = do
     printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
     gets runtimeMultiset >>= \p -> printLog $ "Pocket: " ++ show p
-    appliedOnceRule <- applyFirstMatchingDefinition onceDefs
+    appliedOnceRule <- discardBinder $ applyRule onceDefs
     printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
-    when (isJust appliedOnceRule) $ modifying #singleUseRules (filter (/= fromJust appliedOnceRule))
+    for_ appliedOnceRule $ \rule -> modifying #singleUseRules (filter (/= rule))
     -- Grab the first multi use rule that satisfies all conditions and apply it
-    appliedRule <- applyFirstMatchingDefinition repeatDefs
+    appliedRule <- discardBinder $ applyRule repeatDefs
     printLog $ "Repeat applied: " ++ show appliedRule
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
-        where
-            -- Fully apply the first matching definition we can find. Mutate the runtime, give back Nothing if we can't
-            applyFirstMatchingDefinition :: [MatchRule] -> RuntimeM IO (Maybe MatchRule)
-            applyFirstMatchingDefinition defs = do
-                runtime <- get
-                let (matchedDef, binder) = tryDefinitions defs runtime `runState` emptyBinder
-                case matchedDef of
-                    Just def -> let
-                            matchAction = mapM_ applyMatchEffect . matchEffect $ def
-                            bang = (`runStateT` binder) $ runStateT matchAction runtime -- TODO: brother...
-                            ((_, runtime'), _) = runIdentity bang
-                        in do
-                            put runtime'
-                            pure $ Just def
-                    Nothing -> pure Nothing
+    where
+        discardBinder :: Monad m => RuntimeM Binder_ a -> RuntimeM m a
+        discardBinder = mapStateT (pure . fst . flip runBinder emptyBinder)
 
 -- Run `applyDefs` until there's no point...
 fixApplyDefs :: RuntimeM IO Int

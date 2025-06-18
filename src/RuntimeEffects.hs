@@ -18,7 +18,7 @@ module RuntimeEffects where
 import Core 
 import qualified Zipper as Z
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), State, runState, state, get, put)
+import Control.Monad.Trans.State (StateT (runStateT), State, runState, state, get, put, mapStateT)
 import Data.Maybe (isJust)
 import qualified Multiset as MS
 import Data.Semigroup (Semigroup(sconcat), Any (..))
@@ -26,6 +26,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Functor.Identity (Identity(..))
 import Optics.State
 import Optics
+import Control.Monad (void)
 
 
 -- is this definition single use or will it apply forever?
@@ -96,23 +97,25 @@ tryBindConditions (cond:xs) r = do
 
 -- | Applies matching rules from a list of rules, without applying the effects.
 -- Gives back the first rule where every condition matched, or nothing.
-tryDefinitions :: [MatchRule] -> Runtime -> Binder_ (Maybe MatchRule)
-tryDefinitions [] _ = pure Nothing
-tryDefinitions (rule:rules) r = let
-    conditions = matchCondition rule
-    in do
-        success <- put emptyBinder >> tryBindConditions conditions r
+tryRules :: [MatchRule] -> Runtime -> Maybe (Binder_ MatchRule)
+tryRules rules r = let
+    go :: [MatchRule] -> Binder_ (Maybe MatchRule)
+    go [] = pure Nothing
+    go (rule:rs) = do
+        success <- put emptyBinder >> tryBindConditions (matchCondition rule) r
         if success 
             then pure $ Just rule
-            else tryDefinitions rules r
+            else go rs
+    (maybeRule, binder) = runBinder (go rules) emptyBinder
+    in maybeRule >>= (\rule -> Just $ put binder >> pure rule)
 
 
 -- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
 -- Gives back the first definition where every condition matched, if it exists.
-tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
-tryDefinitionsAt defs r subject = let
-    r' = over #zipper (`Z.put` subject) r
-    in tryDefinitions defs r'
+-- tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
+-- tryDefinitionsAt defs r subject = let
+--     r' = over #zipper (`Z.put` subject) r
+--     in tryRules defs r'
 
 
 -- | Apply a MatchEffect to a given runtime, monadically
@@ -127,6 +130,9 @@ applyMatchEffect (TreeReplacement template) = do
     let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
     modifying #zipper (`Z.spliceIn` concat rewritten)
 
+-- | Apply all the effects from a given rule
+applyRuleEffects :: MatchRule -> RuntimeM Binder_ ()
+applyRuleEffects = mapM_ applyMatchEffect . matchEffect
 
 treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
 treeMapReduce mapper input@(Leaf _) = mapper input
@@ -143,12 +149,25 @@ applyMatchCondition (MultisetPattern ms) r = let
 applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
     rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r
-    -- construct the eager matcher
-    eagerMatcherCallStep = Any . isJust . fst . flip runState binding <$> tryDefinitionsAt rules r
+    -- construct the eager matcher TODO: switch to new system!
+    -- eagerMatcherCallStep = Any . isJust . fst . flip runState binding <$> tryDefinitionsAt rules r
     -- eagerMatcherDefStep = Any . isJust . recognizeDef 
     -- eagerMatcherBuiltinStep = Any . isJust . recognizeBuiltin 
-    eagerMatcherStep i = eagerMatcherCallStep i -- <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
-    eagerMatcher = treeMapReduce eagerMatcherStep
-    in hoistState $ tryApply (getAny . eagerMatcher) subject pat
+    -- eagerMatcherStep i = -- eagerMatcherCallStep i -- <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
+    -- eagerMatcher = treeMapReduce eagerMatcherStep
+    in hoistState $ tryApply (const False) subject pat
 
 
+-- | Grab the first matching rule out of a list of rules. Apply it and and modify the runtime accordingly.
+-- If we couldn't find a matching rule from the input list, give back Nothing.
+applyRule :: [MatchRule] -> RuntimeM Binder_ (Maybe MatchRule)
+applyRule rules = do
+    runtime <- get
+    maybe (pure Nothing) (fmap Just . handleMatchedRule) (tryRules rules runtime)
+    where
+        handleMatchedRule :: Binder_ MatchRule -> RuntimeM Binder_ MatchRule
+        handleMatchedRule ruleWithBindings = do
+            let (matchedRule, binder) = runBinder ruleWithBindings emptyBinder
+            lift $ put binder
+            applyRuleEffects matchedRule >> pure matchedRule
+    
