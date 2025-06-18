@@ -157,9 +157,7 @@ fixEat = do
             tc <- fixApplyDefs
             pure $ count + tc
 
--- Carry out one step of Rosin's execution. This essentially carries out the following:
---   2) We try to apply our rewrite rules at the current rewrite head as many times as possible. Between steps we repeat 1, checking for defs and builtins.
---   3) We move onto the next element in the tree in DFS order. If we're at the end, we loop back to the start
+-- Carry out one step of Rosin's execution, then tail call if we are to continue execution.
 -- Gives back the amount of rules applied in the final step (this should ALWAYS be 0!)
 runStep :: RuntimeM IO Int
 runStep = do
@@ -172,7 +170,8 @@ runStep = do
     count' <- fixEat
     printZipper "Post-eat"
 
-    -- Begin 3 if we never matched anything. Matching stuff usually moves our zipper forward, so we don't move if we matched
+    -- Matching stuff usually moves our zipper forward, so we don't move if we matched on something.
+    -- If we matched on anything, mark the execution as not finished.
     let rulesApplied = count + count'
     when (rulesApplied /= 0) $ assign #areWeDoneYet False
     when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
