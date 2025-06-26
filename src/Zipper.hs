@@ -1,7 +1,46 @@
 module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
-import Data.Functor ((<&>))
+
+-- up, down, left, right, next
+-- the only moves one needs to run
+-- zipper remembers
+
+-- General combinators that are useful for zippers --
+
+-- | Combinator for going as far as you can in one direction of the zipper
+-- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#farthest
+most :: (a -> Maybe a) -> a -> a
+most f = go 
+    where go a = maybe a go (f a)
+
+-- | Combinator for trying to go in a direction
+-- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#tug
+tug :: (a -> Maybe a) -> a -> a
+tug f x = fromMaybe x (f x)
+
+-- | Combinator for going in a direction until `end` returns something.
+keepTryingUntil :: (a -> Maybe a) -> (a -> Maybe a) -> a -> a
+keepTryingUntil f end = go
+    where go x = case end x of
+            Just y -> y
+            Nothing -> maybe x go (f x)
+
+
+-- Zipper types --
+
+-- | Typeclass for Zipper navigation primitives, i.e. everything that doesn't rely on the actual content in the Zipper
+class MovesLikeZipper a where
+    up :: a -> Maybe a
+    -- | Refocuses the zipper on its first child, if it exists
+    firstChild :: a -> Maybe a
+    left :: a -> Maybe a
+    right :: a -> Maybe a
+    -- | Drop the focused tree and give back a zipper looking to the left, above, or up and to the left of the previous focus
+    -- Goes the opposite direction of `nextDfs` such that `nextDfs . dropFocus` should focus the same as `nextDfs` alone
+    -- TODO: That's quickcheckable, ain't it?
+    dropFocus :: a -> a
+
 
 data Zipper a = Zipper {
     _Left :: [Tree a],
@@ -9,6 +48,66 @@ data Zipper a = Zipper {
     _Ups :: [([Tree a], [Tree a])],
     _Content :: Tree a
 } deriving (Show)
+
+instance MovesLikeZipper (Zipper a) where
+    firstChild z = case _Content z of 
+        Leaf _ -> Nothing
+        Branch [] -> Nothing
+        Branch (x:xs) -> Just Zipper {
+            _Left = [],
+            _Right = xs,
+            _Ups = (_Left z, _Right z):_Ups z,
+            _Content = x
+        }
+    left z = case _Left z of
+        [] -> Nothing
+        tree:rest -> Just Zipper {
+            _Left = rest,
+            _Right = _Content z:_Right z,
+            _Ups = _Ups z,
+            _Content = tree
+        }
+    right z = case _Right z of
+        [] -> Nothing
+        tree:rest -> Just Zipper {
+            _Left = _Content z:_Left z,
+            _Right = rest,
+            _Ups = _Ups z,
+            _Content = tree
+        }
+    up z = let lz = leftmost z in case _Ups lz of
+        [] -> Nothing
+        (leftPath, rightPath):rest -> Just Zipper {
+            _Left = leftPath,
+            _Right = rightPath,
+            _Ups = rest,
+            _Content = Branch $ _Content lz:_Right lz
+        }
+    dropFocus z = head $ catMaybes [
+            dropRight <$> left z, 
+            right z >>= up . dropLeft,
+            nullContent <$> up z,
+            Just $ nullContent z
+        ] where dropRight lz = lz { _Right = tail (_Right lz) }
+                dropLeft rz = rz { _Left = tail (_Left rz) }
+                nullContent z' = z' { _Content = Branch [] }
+
+
+-- Zipper combinators --
+-- All of these just rely on the movement primitives defined above
+
+-- | Gives the next tree element in DFS order, or the tip element
+nextDfs :: MovesLikeZipper a => a -> a
+nextDfs z = head $ catMaybes [firstChild z, right z, Just $ keepTryingUntil up right z]
+
+leftmost :: MovesLikeZipper a => a -> a
+leftmost = most left
+
+upmost :: MovesLikeZipper a => a -> a
+upmost = most up
+
+
+-- Zipper inspection --
 
 look :: Zipper a -> Tree a
 look = _Content
@@ -23,7 +122,7 @@ hasChildren z = case _Content z of
     (Branch _) -> True
 
 
--- Zipper creation --
+-- Zipper creation and modification --
 
 zipperFromTrees :: [Tree a] -> Zipper a
 zipperFromTrees trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch trees }
@@ -48,86 +147,4 @@ spliceRight z' = go z' . reverse
           go z [tree] = z { _Content = tree }
           go z (tree:trees) = z { _Right = tree:_Right z } `go` trees
 
--- Drop the focused tree and give back a zipper looking to the left, above, or up and to the left of the previous focus
--- Goes the opposite direction of `nextDfs` such that `nextDfs . dropFocus` should focus the same as `nextDfs` alone
--- TODO: That's quickcheckable, ain't it?
-dropFocus :: Zipper a -> Zipper a
-dropFocus z = head $ catMaybes [
-        dropRight <$> left z, 
-        right z >>= up . dropLeft,
-        nullContent <$> up z,
-        Just $ nullContent z
-    ] where dropRight lz = lz { _Right = tail (_Right lz) }
-            dropLeft rz = rz { _Left = tail (_Left rz) }
-            nullContent z' = z' { _Content = Branch [] }
 
--- Zipper combinators --
-
--- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#farthest
--- Combinator for going as far as you can in one direction of the zipper
-most :: (a -> Maybe a) -> a -> a
-most f = go 
-    where go a = maybe a go (f a)
-
--- See https://hackage.haskell.org/package/zippers-0.3.2/docs/src/Control.Zipper.Internal.html#tug
--- Combinator for trying to go in a direction
-tug :: (a -> Maybe a) -> a -> a
-tug f x = fromMaybe x (f x)
-
-keepTryingUntil :: (a -> Maybe a) -> (a -> Maybe a) -> a -> a
-keepTryingUntil f end = go
-    where go x = case end x of
-            Just y -> y
-            Nothing -> maybe x go (f x)
-
--- Gives the next tree element in DFS order, or the tip element
-nextDfs :: Zipper a -> Zipper a
-nextDfs z = head $ catMaybes [firstChild z, right z, Just $ keepTryingUntil up right z]
-
--- Zipper navigation primitives --
-
--- Refocuses the zipper on its first child, if it exists
-firstChild :: Zipper a -> Maybe (Zipper a)
-firstChild z = case _Content z of 
-    Leaf _ -> Nothing
-    Branch [] -> Nothing
-    Branch (x:xs) -> Just Zipper {
-        _Left = [],
-        _Right = xs,
-        _Ups = (_Left z, _Right z):_Ups z,
-        _Content = x
-    }
-
-left :: Zipper a -> Maybe (Zipper a)
-left z = case _Left z of
-    [] -> Nothing
-    tree:rest -> Just Zipper {
-        _Left = rest,
-        _Right = _Content z:_Right z,
-        _Ups = _Ups z,
-        _Content = tree
-    }
-leftmost :: Zipper a -> Zipper a
-leftmost = most left
-
-right :: Zipper a -> Maybe (Zipper a)
-right z = case _Right z of
-    [] -> Nothing
-    tree:rest -> Just Zipper {
-        _Left = _Content z:_Left z,
-        _Right = rest,
-        _Ups = _Ups z,
-        _Content = tree
-    }
-
-up :: Zipper a -> Maybe (Zipper a)
-up z = let lz = leftmost z in case _Ups lz of
-    [] -> Nothing
-    (leftPath, rightPath):rest -> Just Zipper {
-        _Left = leftPath,
-        _Right = rightPath,
-        _Ups = rest,
-        _Content = Branch $ _Content lz:_Right lz
-    }
-upmost :: Zipper a -> Zipper a
-upmost = most up

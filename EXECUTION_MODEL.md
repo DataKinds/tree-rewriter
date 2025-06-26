@@ -45,9 +45,9 @@ Rosin applies **rules** in a loop until it can no longer apply any **rule** acro
 2. Try consuming the **pointer** as a **rule definition** (i.e. the `(x ~> y & a |> b)` structure given above).
 	1. If this consuming is successful, add one to the **epoch number** and set the **done marker** to false.
 3. Try applying all **rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**.
-	1. If any rule applies, set the **done marker** to false.
-	2. If a **bag effect** is carried out, add one to the **epoch number**.
-	3. If no rules could be applied, **tag** the **pointer**'s **subtree** with the **epoch number**.
+	1. If a **bag effect** is carried out, add one to the **epoch number**.
+	2. If any rule applies, set the **done marker** to false and jump back to step 3. This heuristic allows faster processing.
+	3. If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**. This ensures that eager patterns match correctly.
 4. Try applying all **rules** in the **dictionary** which do not have a **tree pattern** as many times as they will apply.
 	1. If any rule applies, set the **done marker** to false and add one to the **epoch number**.
 5. Get the **next pointer**.
