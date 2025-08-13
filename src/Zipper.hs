@@ -42,14 +42,14 @@ class MovesLikeZipper a where
     dropFocus :: a -> a
 
 
-data Zipper a = Zipper {
-    _Left :: [Tree a],
-    _Right :: [Tree a],
-    _Ups :: [([Tree a], [Tree a])],
-    _Content :: Tree a
+data Zipper tag a = Zipper {
+    _Left :: [TaggedTree tag a],
+    _Right :: [TaggedTree tag a],
+    _Ups :: [([TaggedTree tag a], [TaggedTree tag a])],
+    _Content :: TaggedTree tag a
 } deriving (Show)
 
-instance MovesLikeZipper (Zipper a) where
+instance MovesLikeZipper (Zipper tag a) where
     firstChild z = case _Content z of 
         Leaf _ -> Nothing
         Branch [] -> Nothing
@@ -109,39 +109,38 @@ upmost = most up
 
 -- Zipper inspection --
 
-look :: Zipper a -> Tree a
+look :: Zipper tag a -> TaggedTree tag a
 look = _Content
 
-put :: Zipper a -> Tree a -> Zipper a
+put :: Zipper tag a -> TaggedTree tag a -> Zipper tag a
 put z t = z { _Content = t }
 
-hasChildren :: Zipper a -> Bool
+hasChildren :: Zipper tag a -> Bool
 hasChildren z = case _Content z of 
-    (Leaf _) -> False
-    (Branch []) -> False
-    (Branch _) -> True
+    (TaggedLeaf _ _) -> False
+    (TaggedBranch _ []) -> False
+    (TaggedBranch _ _) -> True
 
 
 -- Zipper creation and modification --
+zipperFromTrees :: tag -> [Tree a] -> Zipper tag a
+zipperFromTrees tag trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = TaggedBranch tag $ toTagged tag <$> trees }
 
-zipperFromTrees :: [Tree a] -> Zipper a
-zipperFromTrees trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch trees }
+zipperFromTree :: tag -> Tree a -> Zipper tag a
+zipperFromTree tag tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = toTagged tag tree }
 
-zipperFromTree :: Tree a -> Zipper a
-zipperFromTree tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = tree }
-
-treeFromZipper :: Zipper a -> Tree a
+treeFromZipper :: Zipper tag a -> TaggedTree tag a
 treeFromZipper = look . upmost
 
 -- Modify a zipper, splicing in a bunch of trees in place of and to the left of the focus
 -- Note that calling `nextDfs` or `right` will not give back any of the spliced in data, as it's all to the left
-spliceIn :: Zipper a -> [Tree a] -> Zipper a
+spliceIn :: Zipper tag a -> [TaggedTree tag a] -> Zipper tag a
 spliceIn z [] = z
 spliceIn z [tree] = z { _Content = tree }
 spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
 
 -- Modify the focus and the right of a zipper, such that calling `nextDfs` will give back the spliced in data
-spliceRight :: Zipper a -> [Tree a] -> Zipper a
+spliceRight :: Zipper tag a -> [TaggedTree tag a] -> Zipper tag a
 spliceRight z' = go z' . reverse
     where go z [] = z
           go z [tree] = z { _Content = tree }

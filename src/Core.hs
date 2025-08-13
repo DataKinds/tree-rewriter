@@ -90,6 +90,19 @@ instance Show RValue where
 -- The tree!
 data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 
+-- | Tagged tree: includes a strict tag at every level, branch and leaf
+data TaggedTree tag a = TaggedBranch !tag [TaggedTree tag a] | TaggedLeaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+
+-- | Discard a tree's tag
+fromTagged :: TaggedTree tag a -> Tree a
+fromTagged (TaggedBranch _ tagged) = Branch $ map fromTagged tagged
+fromTagged (TaggedLeaf _ a) = Leaf a
+
+-- | Add a default tag to all spots on the tree
+toTagged :: tag -> Tree a -> TaggedTree tag a
+toTagged tag (Branch forest) = TaggedBranch tag $ map (toTagged tag) forest
+toTagged tag (Leaf a) = TaggedLeaf tag a
+
 -- Unwrap one level of branching, if it's possible
 unbranch :: Tree RValue -> [Tree RValue]
 unbranch (Branch trees) = trees
@@ -113,19 +126,6 @@ sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
 
 instance (Show a) => Show (Tree a) where
     show = sexprprint
-
--- Tree rewrite rule datatype
--- Parameterized on leaf type
-data Rewrite a = Rewrite {
-    -- The pattern to match in the data tree
-    rewritePattern :: Tree a,
-    -- The template to replace the matched pattern with
-    rewriteTemplate :: [Tree a]
-} deriving (TH.Lift, Eq)
-
-instance Show a => Show (Rewrite a) where
-    show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
-
 
 
 -- | The Binder type, holding the intermediate state needed to apply a single rewrite rule.
