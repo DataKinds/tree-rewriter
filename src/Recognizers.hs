@@ -12,7 +12,7 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), rebranch)
+import Core (Tree (..), RValue (..), rebranch, untree, TaggedTree (..))
 import RuntimeEffects (MatchRule (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
@@ -65,11 +65,12 @@ deplete f x = f x >>= go
         go st = deplete f st
 
 -- Given a tree, is the head of it listing out a rewrite rule?
-recognizeDef :: Tree RValue -> Maybe MatchRule
-recognizeDef (Leaf _) = Nothing
-recognizeDef (Branch trees) = let
+recognizeDef :: Tree a RValue -> Maybe MatchRule
+recognizeDef (TaggedLeaf _ _) = Nothing
+recognizeDef (TaggedBranch _ trees) = let
     ingestedDef = execWriter $ deplete eatCondEffectPair trees
     in if ingestedDef == mempty then Nothing else Just ingestedDef
+
 
 -- Built in rules parsed from the input tree!
 data BuiltinRule = BuiltinRule {

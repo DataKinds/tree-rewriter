@@ -63,8 +63,8 @@ data Runtime = Runtime {
     runtimeRules :: [MatchRule],
     -- What rewriting lambdas are active?
     runtimeSingleUseRules :: [MatchRule],
-    -- Where are we in the data tree?
-    runtimeZipper :: Z.Zipper RValue,
+    -- Where are we in the data tree? Note that we're also using a tag on every level 
+    runtimeZipper :: Z.Zipper Int RValue,
     -- Multiset state!
     runtimeMultiset :: MS.Multiset (Tree RValue),
     -- Epoch number: incremented every time we apply a rule or change our state
@@ -128,7 +128,8 @@ applyMatchEffect (TreeReplacement []) = modifying #zipper Z.dropFocus
 applyMatchEffect (TreeReplacement template) = do
     binder <- lift get
     let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
-    modifying #zipper (`Z.spliceIn` concat rewritten)
+        tagged = toTagged 0 <$> concat rewritten
+    modifying #zipper (`Z.spliceIn` tagged)
 
 -- | Apply all the effects from a given rule
 applyRuleEffects :: MatchRule -> RuntimeM Binder_ ()
@@ -155,7 +156,7 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta 
     -- eagerMatcherBuiltinStep = Any . isJust . recognizeBuiltin 
     -- eagerMatcherStep i = -- eagerMatcherCallStep i -- <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
     -- eagerMatcher = treeMapReduce eagerMatcherStep
-    in hoistState $ tryApply (const False) subject pat
+    in hoistState $ tryApply (const False) (fromTagged subject) pat -- TODO: tryApply takes a tagged
 
 
 -- | Grab the first matching rule out of a list of rules. Apply it and and modify the runtime accordingly.

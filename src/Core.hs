@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Core where
 
@@ -19,10 +20,11 @@ import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
 import Data.Maybe (mapMaybe, fromJust)
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import Data.Functor.Identity (Identity(..))
 import Optics (modifying, makeFieldLabelsNoPrefix)
+import Data.Kind (Type)
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -88,81 +90,92 @@ instance Show RValue where
     show (RVariable t) = show t
 
 -- The tree!
-data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+data Tree tag a = Branch !tag [Tree tag a] | Leaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 
 -- | Tagged tree: includes a strict tag at every level, branch and leaf
-data TaggedTree tag a = TaggedBranch !tag [TaggedTree tag a] | TaggedLeaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+-- data TaggedTree tag a = Branch !tag [TaggedTree tag a] | Leaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+-- deriving instance (Show tag, Show a) => Show (TaggedTree tag a) 
+
+class Treelike (tree :: Type -> Type) where
+    unpackTree :: tree leaf -> Either [tree leaf] leaf
+
+untree :: Treelike tree => ([tree c] -> b) -> (c -> b) -> tree c -> b
+untree branchCase leafCase = either id id . bimap branchCase leafCase . unpackTree
+
+getTag :: Tree tag a -> tag
+getTag (Branch tag _) = tag
+getTag (Leaf tag _) = tag
 
 -- | Discard a tree's tag
-fromTagged :: TaggedTree tag a -> Tree a
-fromTagged (TaggedBranch _ tagged) = Branch $ map fromTagged tagged
-fromTagged (TaggedLeaf _ a) = Leaf a
+-- fromTagged :: Tree tag a -> Tree a
+-- fromTagged (Branch _ tagged) = Branch $ map fromTagged tagged
+-- fromTagged (Leaf _ a) = Leaf a
 
--- | Add a default tag to all spots on the tree
-toTagged :: tag -> Tree a -> TaggedTree tag a
-toTagged tag (Branch forest) = TaggedBranch tag $ map (toTagged tag) forest
-toTagged tag (Leaf a) = TaggedLeaf tag a
+-- -- | Add a default tag to all spots on the tree
+-- toTagged :: tag -> Tree a -> Tree tag a
+-- toTagged tag (Branch forest) = Branch tag $ map (toTagged tag) forest
+-- toTagged tag (Leaf a) = Leaf tag a
 
 -- Unwrap one level of branching, if it's possible
-unbranch :: Tree RValue -> [Tree RValue]
-unbranch (Branch trees) = trees
+-- unbranch :: Tree tag RValue -> [Tree tag RValue]
+unbranch (Branch _ trees) = trees
 unbranch leaf = [leaf]
 
 -- Rewraps a list of trees into one tree, dropping unnecesary nesting
-rebranch :: [Tree RValue] -> Tree RValue
+-- rebranch :: [Tree RValue] -> Tree RValue
 rebranch [t] = t
 rebranch ts = Branch ts
 
-prettyprint :: Show a => Tree a -> String
+-- prettyprint :: Show a => Tree a -> String
 prettyprint = pp 0
     where
-        pp 0 (Leaf a) = show a
-        pp d (Leaf a) = replicate d ' ' ++ "- " ++ show a
-        pp d (Branch as) = intercalate "\n" $ map (pp $ d+1) as
+        pp 0 (Leaf tag a) = show a
+        pp d (Leaf tag a) = replicate d ' ' ++ "- " ++ show a
+        pp d (Branch tag as) = intercalate "\n" $ map (pp $ d+1) as
 
-sexprprint :: Show a => Tree a -> String
-sexprprint (Leaf a) = show a
-sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
+-- sexprprint :: Show a => Tree a -> String
+sexprprint (Leaf tag a) = show a
+sexprprint (Branch tag as) = "(" ++ unwords (map sexprprint as) ++ ")"
 
-instance (Show a) => Show (Tree a) where
+instance (Show a, Show tag) => Show (Tree tag a) where
     show = sexprprint
 
 
 -- | The Binder type, holding the intermediate state needed to apply a single rewrite rule.
-data Binder = Binder {
-    treeBindings :: M.Map T.Text [Tree RValue],
+data Binder treeTag = Binder {
+    treeBindings :: M.Map T.Text [Tree treeTag RValue],
     regexBindings :: M.Map T.Text T.Text
 }
 makeFieldLabelsNoPrefix ''Binder
-type BinderT = StateT Binder -- Binder monad
-type Binder_ = BinderT Identity
+type BinderT tag = StateT (Binder tag) -- Binder monad
+type Binder_ tag = BinderT tag Identity
 
-runBinderT :: BinderT m a -> Binder -> m (a, Binder)
+runBinderT :: BinderT t m a -> Binder t -> m (a, Binder t)
 runBinderT = runStateT
-runBinder :: Binder_ a -> Binder -> (a, Binder)
+runBinder :: Binder_ t a -> Binder t -> (a, Binder t)
 runBinder st = runIdentity . runStateT st
 
 
-emptyBinder :: Binder
+emptyBinder :: Binder t
 emptyBinder = Binder {
     treeBindings = mempty,
     regexBindings = mempty
 }
 
 -- | Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
-addTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
+addTreeBinding :: Monad m => PVar -> Tree t RValue -> BinderT t m ()
 addTreeBinding pvar binding = modifying #treeBindings (M.alter go (pvarBinderName pvar))
     where
         go Nothing = Just [binding]
         go (Just existingBindings) = Just $ binding:existingBindings
 
 -- | Get the binding list for a tree pattern variable
-getTreeBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
+getTreeBinding :: Monad m => PVar -> BinderT t m (Maybe [Tree t RValue])
 getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . treeBindings)
 
 -- | Bind a new or existing pattern variable. Succeed if the binding completed, which requires equality with
 -- the existing binding.
-bindIfEqual :: Monad m => PVar -> Tree RValue -> BinderT m Bool
+bindIfEqual :: Monad m => PVar -> Tree t RValue -> BinderT t m Bool
 bindIfEqual pvar binding = do
     prevBinding <- getTreeBinding pvar
     case prevBinding of
@@ -171,15 +184,15 @@ bindIfEqual pvar binding = do
 
 -- | Bind a new or existing regex match variable. Expects a groupname with no sigil attached.
 -- Overwrites previously bound variables.
-addRegexBinding :: (Monad m) => T.Text -> T.Text -> BinderT m ()
+addRegexBinding :: (Monad m) => T.Text -> T.Text -> BinderT t m ()
 addRegexBinding groupname matchtext = modifying #regexBindings $ M.insert groupname matchtext
 
 -- | Get the binding list for a tree pattern variable
-getRegexBinding :: Monad m => PVar -> BinderT m (Maybe T.Text)
+getRegexBinding :: Monad m => PVar -> BinderT t m (Maybe T.Text)
 getRegexBinding pvar = gets (M.lookup (pvarName pvar) . regexBindings)
 
 -- | Get the correct binding for a PVar. Some PVars may be stored differently in the Binder depending on their tag.
-getBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
+getBinding :: Monad m => PVar -> BinderT t m (Maybe [Tree t RValue])
 getBinding pvar = case pvarTag pvar of
     PVarRegexGroup -> do
         binding <- getRegexBinding pvar
@@ -187,64 +200,65 @@ getBinding pvar = case pvarTag pvar of
     _ -> getTreeBinding pvar
 
 -- Flatten a bunch of RValue trees into one Tree Branch in DFS order
-deepFlatten :: [Tree a] -> Tree a
+-- deepFlatten :: [Tree a] -> Tree a
 deepFlatten = Branch . go
     where go [] = []
           go [end] = [end]
-          go (val:(Leaf end):_) = [val, Leaf end]
-          go (val:(Branch rest):_) = val : go rest
+          go (val:(Leaf tag end):_) = [val, Leaf tag end]
+          go (val:(Branch tag rest):_) = val : go rest
 
 -- | ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: (Tree RValue -> Bool)                   -- Eager matcher: does a given tree match anything else?
-         -> Tree RValue                             -- Input tree
-         -> Tree RValue                             -- Pattern to match
-         -> Binder_ Bool                            -- Updated variable bindings, along with whether the match succeeded
+tryApply :: (Tree tag RValue -> Bool)                   -- Eager matcher: does a given tree match anything else?
+         -> Tree tag RValue                             -- Input tree
+         -> Tree tag RValue                             -- Pattern to match
+         -> Binder_ tag Bool                            -- Updated variable bindings, along with whether the match succeeded
 -- Match pattern variables
-tryApply submatcher rval (Leaf (RVariable pvar)) = 
+tryApply submatcher rval (Leaf _ (RVariable pvar)) = 
     -- Check for submatches and fail out if we're matching an eager variable 
+    -- TODO: check the tag here!
     if pvarEager pvar && submatcher rval then pure False else go pvar
     where
-        go :: PVar -> State Binder Bool
+        -- go :: PVar -> State (Binder tag) Bool
         -- Bind special accumulators
         go (PVar _ (PVarSpecialAccum sa) _) = case sa of
             -- sum accumulator 
             SASum -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
+                num@(Leaf _ (RNumber _)) -> addTreeBinding pvar num >> pure True
                 _ -> pure False
             -- product accumulator 
             SAProduct -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
+                num@(Leaf _ (RNumber _)) -> addTreeBinding pvar num >> pure True
                 _ -> pure False
             -- negation accumulator 
             SANegate -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
+                num@(Leaf _ (RNumber _)) -> addTreeBinding pvar num >> pure True
                 _ -> pure False
             -- cons to sexpr (pack) accumulator 
             SAPack -> (addTreeBinding pvar . deepFlatten $ case rval of
-                        Leaf r -> [Leaf r]
-                        Branch rs -> rs) >> pure True
+                        Leaf tag r -> [Leaf tag r]
+                        Branch _ rs -> rs) >> pure True
             -- sexpr to cons (unpack) accumulator 
             SAUnpack -> case rval of
-                Leaf _ -> pure False
-                Branch rs -> (addTreeBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs) >> pure True
+                Leaf _ _ -> pure False
+                Branch tag rs -> (addTreeBinding pvar . foldr (\leaf acc -> Branch tag [leaf, acc]) (Branch tag []) $ rs) >> pure True
         -- Bind regular pattern variable
         go _ = bindIfEqual pvar rval
 -- Match ntree branch patterns exactly
-tryApply _ (Branch []) (Branch []) = pure True
-tryApply _ (Branch []) _ = pure False
-tryApply rules (Branch rtrees) (Branch pvals)
+tryApply _ (Branch _ []) (Branch _ []) = pure True
+tryApply _ (Branch _ []) _ = pure False
+tryApply rules (Branch _ rtrees) (Branch _ pvals)
     -- No point to checking patterns that match branches of the wrong length
     | length rtrees /= length pvals = pure False
     | otherwise = and <$> zipWithM (tryApply rules) rtrees pvals
 -- Match symbol patterns
-tryApply _ rval pleaf@(Leaf (RSymbol _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RSymbol _)) = pure $ rval == pleaf
 -- Match number patterns
-tryApply _ rval pleaf@(Leaf (RNumber _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RNumber _)) = pure $ rval == pleaf
 -- Match string patterns 
-tryApply _ rval pleaf@(Leaf (RString _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RString _)) = pure $ rval == pleaf
 -- Match regex, setting variables corresponding to all captures
-tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) =
+tryApply _ (Leaf _ (RString rstr)) (Leaf _ (RRegex preg)) =
     case ICU.find preg rstr of
         Nothing -> pure False
         Just match -> do
@@ -262,11 +276,11 @@ tryApply _ _ _ = pure False
 
 
 -- | Apply variable bindings to a pattern, "filling it out" and modifying any pattern variables according to the binding.
-betaReduce :: Tree RValue -> Binder_ [Tree RValue]
-betaReduce (Branch trees) = do  -- Recursive case
+betaReduce :: Tree tag RValue -> Binder_ tag [Tree tag RValue]
+betaReduce (Branch tag trees) = do  -- Recursive case
     treeLists <- mapM betaReduce trees
-    pure [Branch $ concat treeLists]
-betaReduce input@(Leaf (RVariable pvar)) = do  -- Base case, matching a pattern var
+    pure [Branch tag $ concat treeLists]
+betaReduce input@(Leaf tag (RVariable pvar)) = do  -- Base case, matching a pattern var
     pvarBinding <- getBinding pvar
     case pvar of
         -- Handle special accumulators
@@ -276,19 +290,19 @@ betaReduce input@(Leaf (RVariable pvar)) = do  -- Base case, matching a pattern 
             Just rvals -> pure $ reverse rvals
             Nothing -> pure [input]
     where
-        goSpecialAccums :: SpecialAccumTag -> Maybe [Tree RValue] -> [Tree RValue]
+        -- goSpecialAccums :: SpecialAccumTag -> Maybe [Tree RValue] -> [Tree RValue]
         goSpecialAccums _ Nothing = [] -- unbound special accumulators produce nothing
         goSpecialAccums sa (Just rvals) = case sa of
             -- sum accumulator 
-            SASum -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
+            SASum -> [Leaf . RNumber . sum $ ((\case { Leaf _ (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
             -- product accumulator 
-            SAProduct -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
+            SAProduct -> [Leaf . RNumber . product $ ((\case { Leaf _ (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
             -- negation accumulator 
-            SANegate -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
+            SANegate -> (\case { Leaf _ (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
             -- other accumulators (SAPack, SAUnpack) bind like normal variables
             _ -> reverse rvals
 -- Perform regex capture group substitutions!
-betaReduce (Leaf (RString pstr)) = do
+betaReduce (Leaf _ (RString pstr)) = do
     regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . regexBindings)
-    pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr regexBindings
-betaReduce (Leaf pval) = pure [Leaf pval]
+    pure . pure . Leaf tag . RString $ foldr (uncurry T.replace) pstr regexBindings
+betaReduce (Leaf _ pval) = pure [Leaf tag pval]

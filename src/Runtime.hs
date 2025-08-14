@@ -13,7 +13,7 @@ module Runtime where
 import Core
     ( emptyBinder,
       RValue(RString),
-      Tree(..), Binder_, runBinder )
+      Tree(..), Binder_, runBinder, TaggedTree (..), fromTagged )
 import Core.DSL ( str, num, branch, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
@@ -35,8 +35,9 @@ import Data.Functor (void)
 import Data.Foldable (for_)
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees trees) MS.empty 0 False
+emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch False
     where emptyRules = []
+          epoch = 0
 
 -- Execute a Rosin runtime --
 
@@ -194,12 +195,13 @@ run :: Runtime -> IO Runtime
 run = execStateT firstStep
 
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
+unzipper :: Z.Zipper tag a -> [TaggedTree tag a]
 unzipper z = case Z.treeFromZipper z of
-    Branch trees -> trees
-    val@(Leaf _) -> [val]
+    TaggedBranch _ trees -> trees
+    val@(TaggedLeaf _ _) -> [val]
 
 runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [MatchRule])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
-    pure (unzipper . runtimeZipper $ out, runtimeRules out)
+    pure (map fromTagged . unzipper . runtimeZipper $ out, runtimeRules out)
   

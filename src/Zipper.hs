@@ -1,3 +1,5 @@
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
 module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
@@ -45,18 +47,20 @@ class MovesLikeZipper a where
 data Zipper tag a = Zipper {
     _Left :: [TaggedTree tag a],
     _Right :: [TaggedTree tag a],
-    _Ups :: [([TaggedTree tag a], [TaggedTree tag a])],
+    _Ups :: [([TaggedTree tag a], tag, [TaggedTree tag a])],
     _Content :: TaggedTree tag a
-} deriving (Show)
+}
+deriving instance (Show tag, Show a) => Show (Zipper tag a)
 
 instance MovesLikeZipper (Zipper tag a) where
+    firstChild :: Zipper tag a -> Maybe (Zipper tag a)
     firstChild z = case _Content z of 
-        Leaf _ -> Nothing
-        Branch [] -> Nothing
-        Branch (x:xs) -> Just Zipper {
+        TaggedLeaf _ _ -> Nothing
+        TaggedBranch _ [] -> Nothing
+        TaggedBranch tag (x:xs) -> Just Zipper {
             _Left = [],
             _Right = xs,
-            _Ups = (_Left z, _Right z):_Ups z,
+            _Ups = (_Left z, tag, _Right z):_Ups z,
             _Content = x
         }
     left z = case _Left z of
@@ -77,11 +81,11 @@ instance MovesLikeZipper (Zipper tag a) where
         }
     up z = let lz = leftmost z in case _Ups lz of
         [] -> Nothing
-        (leftPath, rightPath):rest -> Just Zipper {
+        (leftPath, tag, rightPath):rest -> Just Zipper {
             _Left = leftPath,
             _Right = rightPath,
             _Ups = rest,
-            _Content = Branch $ _Content lz:_Right lz
+            _Content = TaggedBranch tag $ _Content lz:_Right lz
         }
     dropFocus z = head $ catMaybes [
             dropRight <$> left z, 
@@ -90,7 +94,7 @@ instance MovesLikeZipper (Zipper tag a) where
             Just $ nullContent z
         ] where dropRight lz = lz { _Right = tail (_Right lz) }
                 dropLeft rz = rz { _Left = tail (_Left rz) }
-                nullContent z' = z' { _Content = Branch [] }
+                nullContent z' = z' { _Content = TaggedBranch (getTag $ _Content z') [] }
 
 
 -- Zipper combinators --
