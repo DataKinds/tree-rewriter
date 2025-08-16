@@ -44,20 +44,20 @@ class MovesLikeZipper a where
     dropFocus :: a -> a
 
 
-data Zipper tag a = Zipper {
-    _Left :: [TaggedTree tag a],
-    _Right :: [TaggedTree tag a],
-    _Ups :: [([TaggedTree tag a], tag, [TaggedTree tag a])],
-    _Content :: TaggedTree tag a
+data Zipper a = Zipper {
+    _Left :: [Tree a],
+    _Right :: [Tree a],
+    _Ups :: [([Tree a], TagType, [Tree a])],
+    _Content :: Tree a
 }
-deriving instance (Show tag, Show a) => Show (Zipper tag a)
+deriving instance (Show a) => Show (Zipper a)
 
-instance MovesLikeZipper (Zipper tag a) where
-    firstChild :: Zipper tag a -> Maybe (Zipper tag a)
-    firstChild z = case _Content z of 
-        TaggedLeaf _ _ -> Nothing
-        TaggedBranch _ [] -> Nothing
-        TaggedBranch tag (x:xs) -> Just Zipper {
+instance MovesLikeZipper (Zipper a) where
+    firstChild :: Zipper a -> Maybe (Zipper a)
+    firstChild z = case _Content z of -- TODO: tag wrong?
+        Leaf _ _ -> Nothing
+        Branch _ [] -> Nothing
+        Branch tag (x:xs) -> Just Zipper {
             _Left = [],
             _Right = xs,
             _Ups = (_Left z, tag, _Right z):_Ups z,
@@ -85,7 +85,7 @@ instance MovesLikeZipper (Zipper tag a) where
             _Left = leftPath,
             _Right = rightPath,
             _Ups = rest,
-            _Content = TaggedBranch tag $ _Content lz:_Right lz
+            _Content = Branch tag $ _Content lz:_Right lz
         }
     dropFocus z = head $ catMaybes [
             dropRight <$> left z, 
@@ -94,7 +94,7 @@ instance MovesLikeZipper (Zipper tag a) where
             Just $ nullContent z
         ] where dropRight lz = lz { _Right = tail (_Right lz) }
                 dropLeft rz = rz { _Left = tail (_Left rz) }
-                nullContent z' = z' { _Content = TaggedBranch (getTag $ _Content z') [] }
+                nullContent z' = z' { _Content = Branch (getTag $ _Content z') [] }
 
 
 -- Zipper combinators --
@@ -113,38 +113,38 @@ upmost = most up
 
 -- Zipper inspection --
 
-look :: Zipper tag a -> TaggedTree tag a
+look :: Zipper a -> Tree a
 look = _Content
 
-put :: Zipper tag a -> TaggedTree tag a -> Zipper tag a
+put :: Zipper a -> Tree a -> Zipper a
 put z t = z { _Content = t }
 
-hasChildren :: Zipper tag a -> Bool
+hasChildren :: Zipper a -> Bool
 hasChildren z = case _Content z of 
-    (TaggedLeaf _ _) -> False
-    (TaggedBranch _ []) -> False
-    (TaggedBranch _ _) -> True
+    (Leaf _ _) -> False
+    (Branch _ []) -> False
+    (Branch _ _) -> True
 
 
 -- Zipper creation and modification --
-zipperFromTrees :: tag -> [Tree a] -> Zipper tag a
-zipperFromTrees tag trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = TaggedBranch tag $ toTagged tag <$> trees }
+zipperFromTrees :: TagType -> [Tree a] -> Zipper a
+zipperFromTrees tag trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch tag trees }
 
-zipperFromTree :: tag -> Tree a -> Zipper tag a
-zipperFromTree tag tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = toTagged tag tree }
+zipperFromTree :: Tree a -> Zipper a
+zipperFromTree tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = tree }
 
-treeFromZipper :: Zipper tag a -> TaggedTree tag a
+treeFromZipper :: Zipper a -> Tree a
 treeFromZipper = look . upmost
 
 -- Modify a zipper, splicing in a bunch of trees in place of and to the left of the focus
 -- Note that calling `nextDfs` or `right` will not give back any of the spliced in data, as it's all to the left
-spliceIn :: Zipper tag a -> [TaggedTree tag a] -> Zipper tag a
+spliceIn :: Zipper a -> [Tree a] -> Zipper a
 spliceIn z [] = z
 spliceIn z [tree] = z { _Content = tree }
 spliceIn z (tree:trees) = z { _Left = tree:_Left z } `spliceIn` trees
 
 -- Modify the focus and the right of a zipper, such that calling `nextDfs` will give back the spliced in data
-spliceRight :: Zipper tag a -> [TaggedTree tag a] -> Zipper tag a
+spliceRight :: Zipper a -> [Tree a] -> Zipper a
 spliceRight z' = go z' . reverse
     where go z [] = z
           go z [tree] = z { _Content = tree }

@@ -49,6 +49,7 @@ library
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists
   build-depends:
       QuickCheck
@@ -84,6 +85,7 @@ executable rosin
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -O3 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -122,6 +124,7 @@ test-suite rosin-test
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck

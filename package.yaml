@@ -57,6 +57,7 @@ default-extensions:
 - DuplicateRecordFields
 - OverloadedRecordDot
 - OverloadedLabels
+- StandaloneDeriving
 
 library:
   source-dirs: src

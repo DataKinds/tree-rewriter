@@ -64,7 +64,7 @@ data Runtime = Runtime {
     -- What rewriting lambdas are active?
     runtimeSingleUseRules :: [MatchRule],
     -- Where are we in the data tree? Note that we're also using a tag on every level 
-    runtimeZipper :: Z.Zipper Int RValue,
+    runtimeZipper :: Z.Zipper RValue,
     -- Multiset state!
     runtimeMultiset :: MS.Multiset (Tree RValue),
     -- Epoch number: incremented every time we apply a rule or change our state
