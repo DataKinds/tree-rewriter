@@ -13,7 +13,7 @@ module Runtime where
 import Core
     ( emptyBinder,
       RValue(RString),
-      Tree(..), Binder_, runBinder, TaggedTree (..), fromTagged )
+      Tree(..), Binder_, runBinder )
 import Core.DSL ( str, num, branch, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
@@ -23,7 +23,7 @@ import Control.Monad.Trans.State (gets, execStateT, mapStateT)
 import Control.Monad (when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
-import Recognizers (recognizeDef, recognizeBuiltin, BuiltinRule (..))
+import Recognizers 
 import System.FilePath ((</>), takeDirectory)
 import Parser (parse)
 import Data.Bool (bool)
@@ -83,22 +83,22 @@ eatBuiltin = do
                 modifying #zipper (`Z.put` tstr line)
             "print" -> do
                 let printer = \case
-                        Leaf (RString input) -> TIO.putStrLn input
+                        LeafStr input -> TIO.putStrLn input
                         other -> print other
                 liftIO $ mapM_ printer args
                 modifying #zipper (Z.nextDfs . Z.dropFocus)
             "parse" -> case args of
-                Leaf (RString input):_ -> do
+                LeafStr input:_ -> do
                     filepath <- gets runtimePath
                     case parse (T.unpack input) (filepath++"<eval>") of
-                        Left err -> modifying #zipper (`Z.put` (Leaf . RString . T.pack $ "parse error: " ++ show err))
+                        Left err -> modifying #zipper (`Z.put` (tstr . T.pack $ "parse error: " ++ show err))
                         Right success -> modifying #zipper (`Z.spliceRight` success)
                 _ -> pure ()
             "cat" -> case args of
-                Leaf (RString path):_ -> do
+                LeafStr path:_ -> do
                     pathContext <- gets (takeDirectory . runtimePath)
                     fileContents <- lift . TIO.readFile . (pathContext </>) . T.unpack $ path
-                    modifying #zipper (`Z.put` (Leaf . RString $ fileContents))
+                    modifying #zipper (`Z.put` tstr fileContents)
                 _ -> pure ()
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
@@ -195,13 +195,13 @@ run :: Runtime -> IO Runtime
 run = execStateT firstStep
 
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
-unzipper :: Z.Zipper tag a -> [TaggedTree tag a]
+unzipper :: Z.Zipper a -> [Tree a]
 unzipper z = case Z.treeFromZipper z of
-    TaggedBranch _ trees -> trees
-    val@(TaggedLeaf _ _) -> [val]
+    Branch _ trees -> trees
+    val@(Leaf _ _) -> [val]
 
 runEasy :: String -> Bool -> [Tree RValue] -> IO ([Tree RValue], [MatchRule])
 runEasy filepath verbose inTrees = do
     out <- run (emptyRuntime filepath verbose inTrees)
-    pure (map fromTagged . unzipper . runtimeZipper $ out, runtimeRules out)
+    pure (unzipper . runtimeZipper $ out, runtimeRules out)
   

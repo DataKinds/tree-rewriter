@@ -3,6 +3,7 @@
 module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
+import Optics ((^.))
 
 -- up, down, left, right, next
 -- the only moves one needs to run
@@ -94,7 +95,7 @@ instance MovesLikeZipper (Zipper a) where
             Just $ nullContent z
         ] where dropRight lz = lz { _Right = tail (_Right lz) }
                 dropLeft rz = rz { _Left = tail (_Left rz) }
-                nullContent z' = z' { _Content = Branch (getTag $ _Content z') [] }
+                nullContent z' = z' { _Content = Branch (_Content z' ^. tag) [] }
 
 
 -- Zipper combinators --

@@ -4,10 +4,11 @@ import qualified Data.Text as T
 import Parser (parse)
 import Runtime 
 import RuntimeEffects
-import Core (Tree, RValue, rebranch)
+import Core (Tree, RValue, rebranch, defaultTag)
 import qualified Multiset as MS
 import Trie
 import Data.Maybe
+import GHC.Stack (HasCallStack)
 import Invariants
 
 
@@ -35,7 +36,7 @@ shouldBecomeWithBag tree transformed bag = do
     trans <- parseOrDie "test assertion" transformed
     bagTrees <- mapM (parseOrDie "bag" . fst) bag
     let bagCounts = snd <$> bag
-    let bag' = MS.fromList $ zip (rebranch <$> bagTrees) bagCounts
+    let bag' = MS.fromList $ zip (rebranch defaultTag <$> bagTrees) bagCounts
     (unzipper . runtimeZipper $ runtime) `shouldBe` trans
     runtimeMultiset runtime `shouldBe` bag'
 

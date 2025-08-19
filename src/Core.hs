@@ -25,6 +25,7 @@ import Data.Function (on)
 import Data.Functor.Identity (Identity(..))
 import Optics (modifying, makeFieldLabelsNoPrefix)
 import Data.Kind (Type)
+import Optics
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -105,19 +106,20 @@ data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Func
 -- untree :: Treelike tree => ([tree c] -> b) -> (c -> b) -> tree c -> b
 -- untree branchCase leafCase = either id id . bimap branchCase leafCase . unpackTree
 
-getTag :: Tree a -> TagType
-getTag (Branch tag _) = tag
-getTag (Leaf tag _) = tag
+-- | tagAll applies a tag to every node in the tree
+tagAll :: TagType -> Tree a -> Tree a
+tagAll tag' (Branch _ forest) = Branch tag' $ tagAll tag' <$> forest
+tagAll tag' leaf = (tag .~ tag') leaf
 
--- | Discard a tree's tag
--- fromTagged :: Tree a -> Tree a
--- fromTagged (Branch _ tagged) = Branch $ map fromTagged tagged
--- fromTagged (Leaf _ a) = Leaf a
 
--- -- | Add a default tag to all spots on the tree
--- toTagged :: tag -> Tree a -> Tree a
--- toTagged tag (Branch forest) = Branch tag $ map (toTagged tag) forest
--- toTagged tag (Leaf a) = Leaf tag a
+tag :: Lens (Tree a) (Tree a) TagType TagType
+tag = lens get set
+    where
+        get (Branch tag _) = tag
+        get (Leaf tag _) = tag
+        set (Branch _ forest) tag' = Branch tag' forest
+        set (Leaf _ tip) tag' = Leaf tag' tip
+
 
 -- Unwrap one level of branching, if it's possible
 unbranch :: Tree a -> [Tree a]
