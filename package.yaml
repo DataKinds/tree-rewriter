@@ -34,6 +34,7 @@ dependencies:
 - optics
 - pretty-simple
 - QuickCheck
+- hspec
 
 ghc-options:
 - -Wall
@@ -58,6 +59,7 @@ default-extensions:
 - OverloadedRecordDot
 - OverloadedLabels
 - StandaloneDeriving
+- PatternSynonyms
 
 library:
   source-dirs: src
@@ -84,4 +86,3 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - tree-rewriter
-    - hspec

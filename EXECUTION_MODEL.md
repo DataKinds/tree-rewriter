@@ -27,7 +27,7 @@ This rule has four **effects**: `~> world` encodes the effect of replacing the *
 Matching all **patterns** in a **rule** then carrying out all **effects** in a **rule** may be called **applying a rule**.
 
 ### Eager patterns
-Rosin supports **eager patterns** (TODO: maybe *delayed patterns* is a better name?) for ordering **rules**, where specific **subtrees** inside **patterns** can be marked as **eager**, meaning they'll refuse to match if any **subtree** matches another **rule**. This has the effect of *eagerly evaluating* the **subtree** before applying the **eager pattern**. 
+Rosin supports **eager patterns** (TODO: maybe *delayed patterns* is a better name?) for enforcing an execution order on **rules**, where specific **subtrees** inside **patterns** can be marked as **eager**, meaning they'll refuse to match if any **subtree** matches another **rule**. This has the effect of *eagerly evaluating* the **subtree** before applying the **eager pattern**. 
 
 This may be implemented naively with O(n^2) time complexity, but this spec rejects that in favor of the **epoch number**: **eager patterns** should only match if all matching **subtrees** are tagged with the current **epoch number**! This brings the time complexity down to O(n) on the size of the **subtree** in exchange for less predictable **eager pattern** semantics.
 
@@ -46,7 +46,7 @@ Rosin applies **rules** in a loop until it can no longer apply any **rule** acro
 	1. If this consuming is successful, add one to the **epoch number** and set the **done marker** to false.
 3. Try applying all **rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**.
 	1. If a **bag effect** is carried out, add one to the **epoch number**.
-	2. If any rule applies, set the **done marker** to false and jump back to step 3. This heuristic allows faster processing.
+	2. If any rule applies, set the **done marker** to false and jump back to step 3. **Tag** all nodes in the **pointer**'s **subtree** with the **epoch number** minus 1.
 	3. If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**. This ensures that eager patterns match correctly.
 4. Try applying all **rules** in the **dictionary** which do not have a **tree pattern** as many times as they will apply.
 	1. If any rule applies, set the **done marker** to false and add one to the **epoch number**.
