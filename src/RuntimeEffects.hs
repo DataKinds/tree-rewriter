@@ -120,20 +120,20 @@ tryRules rules r = let
 
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
-applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
-applyMatchEffect (MultisetPush ms) = do
+applyMatchEffect :: TagType -> MatchEffect -> RuntimeM Binder_ ()
+applyMatchEffect _ (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap (rebranch defaultTag)  . betaReduce) ms
     modifying #multiset (MS.putMany ms')
-applyMatchEffect (TreeReplacement []) = modifying #zipper Z.dropFocus
-applyMatchEffect (TreeReplacement template) = do
+applyMatchEffect _ (TreeReplacement []) = modifying #zipper Z.dropFocus
+applyMatchEffect tag' (TreeReplacement template) = do
     binder <- lift get
     let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
-        tagged = tagAll defaultTag <$> concat rewritten
+        tagged = tagAll tag' <$> concat rewritten
     modifying #zipper (`Z.spliceIn` tagged)
 
 -- | Apply all the effects from a given rule
-applyRuleEffects :: MatchRule -> RuntimeM Binder_ ()
-applyRuleEffects = mapM_ applyMatchEffect . matchEffect
+applyRuleEffects :: TagType -> MatchRule -> RuntimeM Binder_ ()
+applyRuleEffects tag' = mapM_ (applyMatchEffect tag') . matchEffect
 
 treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
 treeMapReduce mapper input@(Leaf _ _) = mapper input
@@ -148,27 +148,21 @@ applyMatchCondition (MultisetPattern ms) r = let
         ms' <- MS.traverseValues (fmap (rebranch defaultTag) . betaReduce) ms
         pure $ MS.allInside ms' pocket -- TODO: pattern match!
 applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
-    rules = runtimeRules r
     subject = Z.look . runtimeZipper $ r
-    -- construct the eager matcher TODO: switch to new system!
-    -- eagerMatcherCallStep = Any . isJust . fst . flip runState binding <$> tryDefinitionsAt rules r
-    -- eagerMatcherDefStep = Any . isJust . recognizeDef 
-    -- eagerMatcherBuiltinStep = Any . isJust . recognizeBuiltin 
-    -- eagerMatcherStep i = -- eagerMatcherCallStep i -- <> eagerMatcherDefStep i <> eagerMatcherBuiltinStep i
-    -- eagerMatcher = treeMapReduce eagerMatcherStep
-    in hoistState $ tryApply (const False) subject pat
+    -- construct the eager matcher, which only matches eager variables if the runtimeEpoch value allows it
+    in hoistState $ tryApply (allTags (== runtimeEpoch r)) subject pat
 
 
--- | Grab the first matching rule out of a list of rules. Apply it and and modify the runtime accordingly.
+-- | Grab the first matching rule out of a list of rules. Apply it and tag the tree and modify the runtime accordingly.
 -- If we couldn't find a matching rule from the input list, give back Nothing.
 applyRule :: [MatchRule] -> RuntimeM Binder_ (Maybe MatchRule)
 applyRule rules = do
     runtime <- get
-    maybe (pure Nothing) (fmap Just . handleMatchedRule) (tryRules rules runtime)
+    maybe (pure Nothing) (fmap Just . handleMatchedRule (runtimeEpoch runtime)) (tryRules rules runtime)
     where
-        handleMatchedRule :: Binder_ MatchRule -> RuntimeM Binder_ MatchRule
-        handleMatchedRule ruleWithBindings = do
+        handleMatchedRule :: TagType -> Binder_ MatchRule -> RuntimeM Binder_ MatchRule
+        handleMatchedRule epochTag ruleWithBindings = do
             let (matchedRule, binder) = runBinder ruleWithBindings emptyBinder
             lift $ put binder
-            applyRuleEffects matchedRule >> pure matchedRule
+            applyRuleEffects epochTag matchedRule >> pure matchedRule
     

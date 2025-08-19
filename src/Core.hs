@@ -96,6 +96,12 @@ defaultTag :: TagType
 defaultTag = -1 -- the default tag to use when we don't care about tagging (i.e. grabbing templates or parsing)
 data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 
+pattern LeafSym :: T.Text -> Tree RValue
+pattern LeafSym sym <- Leaf _ (RSymbol sym)
+
+pattern LeafStr :: T.Text -> Tree RValue
+pattern LeafStr sym <- Leaf _ (RString sym)
+
 -- | Tagged tree: includes a strict tag at every level, branch and leaf
 -- data TaggedTree tag a = Branch !tag [TaggedTree tag a] | Leaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
 -- deriving instance (Show tag, Show a) => Show (TaggedTree tag a) 
@@ -105,6 +111,12 @@ data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Func
 
 -- untree :: Treelike tree => ([tree c] -> b) -> (c -> b) -> tree c -> b
 -- untree branchCase leafCase = either id id . bimap branchCase leafCase . unpackTree
+
+-- | allTags applies a predicate to all tags and returns true if all fit
+allTags :: (TagType -> Bool) -> Tree a -> Bool
+allTags f (Branch ourTag forest) = f ourTag && all (allTags f) forest 
+allTags f leaf = f (leaf ^. tag)
+
 
 -- | tagAll applies a tag to every node in the tree
 tagAll :: TagType -> Tree a -> Tree a

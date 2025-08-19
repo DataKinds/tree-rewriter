@@ -23,6 +23,8 @@ runProg fp prog = do
     rvals <- parseOrDie fp prog
     run $ newRuntime rvals
 
+-- TODO: `shouldBe` is not sufficient anymore
+
 -- | shouldBecome also tacks on a rule to remove `(defined ...)` compiler output
 shouldBecome :: HasCallStack => T.Text -> T.Text -> Expectation
 shouldBecome tree transformed = do

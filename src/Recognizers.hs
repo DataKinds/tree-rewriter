@@ -12,27 +12,20 @@
 module Recognizers where
 
 import qualified Data.Text as T
-import Core (Tree (..), RValue (..), rebranch, defaultTag)
+import Core
 import RuntimeEffects (MatchRule (..), MatchCondition (..), MatchEffect (..), UseCount (..))
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
 
 
-pattern LeafSym :: T.Text -> Tree RValue
-pattern LeafSym sym <- Leaf _ (RSymbol sym)
-
-pattern LeafStr :: T.Text -> Tree RValue
-pattern LeafStr sym <- Leaf _ (RString sym)
-
 data DefOpType = SetOp | TreeOp
 acceptOp :: Tree RValue -> Maybe (DefOpType, UseCount)
-acceptOp (Branch _ _) = Nothing
-acceptOp (Leaf _ (RSymbol "~>")) = Just (TreeOp, UseMany)
-acceptOp (Leaf _ (RSymbol "~")) = Just (TreeOp, UseOnce)
-acceptOp (Leaf _ (RSymbol "|>")) = Just (SetOp, UseMany)
-acceptOp (Leaf _ (RSymbol "|")) = Just (SetOp, UseOnce)
-acceptOp (Leaf _ _) = Nothing
+acceptOp (LeafSym "~>") = Just (TreeOp, UseMany)
+acceptOp (LeafSym "~") = Just (TreeOp, UseOnce)
+acceptOp (LeafSym "|>") = Just (SetOp, UseMany)
+acceptOp (LeafSym "|") = Just (SetOp, UseOnce)
+acceptOp _ = Nothing
 
 pocketCopies :: Int -> [Tree RValue] -> MS.Multiset (Tree RValue)
 pocketCopies nTimes = MS.fromList . map (,nTimes)

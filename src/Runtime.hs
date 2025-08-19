@@ -11,9 +11,6 @@
 module Runtime where
 
 import Core
-    ( emptyBinder,
-      RValue(RString),
-      Tree(..), Binder_, runBinder )
 import Core.DSL ( str, num, branch, tstr )
 import qualified Zipper as Z
 import qualified Data.Text as T
@@ -171,10 +168,12 @@ runStep = do
     count' <- fixEat
     printZipper "Post-eat"
 
-    -- Matching stuff usually moves our zipper forward, so we don't move if we matched on something.
-    -- If we matched on anything, mark the execution as not finished.
+    -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.
     let rulesApplied = count + count'
-    when (rulesApplied /= 0) $ assign #areWeDoneYet False
+    when (rulesApplied /= 0) $ do
+        assign #areWeDoneYet False
+        modifying #epoch (+ 1) 
+    -- Matching stuff usually moves our zipper forward, so we only move forward if we didn't match on anything.
     when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
 
     -- Let's stop executing if our "done" flag is set and we're back at the top of the input tree
