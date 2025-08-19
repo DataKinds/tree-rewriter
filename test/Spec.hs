@@ -4,7 +4,7 @@ import qualified Data.Text as T
 import Parser (parse)
 import Runtime 
 import RuntimeEffects
-import Core (Tree, RValue, rebranch, defaultTag)
+import Core (Tree, RValue, rebranch, defaultTag, tagAll)
 import qualified Multiset as MS
 import Trie
 import Data.Maybe
@@ -23,14 +23,12 @@ runProg fp prog = do
     rvals <- parseOrDie fp prog
     run $ newRuntime rvals
 
--- TODO: `shouldBe` is not sufficient anymore
-
 -- | shouldBecome also tacks on a rule to remove `(defined ...)` compiler output
 shouldBecome :: HasCallStack => T.Text -> T.Text -> Expectation
 shouldBecome tree transformed = do
     tree' <- runProg "test input" $ "(defined :x ~>)" `T.append` tree
     trans <- parseOrDie "test assertion" transformed
-    (unzipper . runtimeZipper $ tree') `shouldBe` trans
+    tagAll defaultTag <$> (unzipper . runtimeZipper $ tree') `shouldBe` tagAll defaultTag <$> trans
 
 shouldBecomeWithBag :: HasCallStack => T.Text -> T.Text -> [(T.Text, Int)] -> Expectation
 shouldBecomeWithBag tree transformed bag = do
@@ -39,7 +37,7 @@ shouldBecomeWithBag tree transformed bag = do
     bagTrees <- mapM (parseOrDie "bag" . fst) bag
     let bagCounts = snd <$> bag
     let bag' = MS.fromList $ zip (rebranch defaultTag <$> bagTrees) bagCounts
-    (unzipper . runtimeZipper $ runtime) `shouldBe` trans
+    tagAll defaultTag <$> (unzipper . runtimeZipper $ runtime) `shouldBe` tagAll defaultTag <$> trans
     runtimeMultiset runtime `shouldBe` bag'
 
 
