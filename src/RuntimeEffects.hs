@@ -18,7 +18,7 @@ module RuntimeEffects where
 import Core 
 import qualified Zipper as Z
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT (runStateT), State, runState, state, get, put, mapStateT)
+import Control.Monad.Trans.State (StateT (runStateT), State, runState, state, get, put, mapStateT, gets)
 import Data.Maybe (isJust)
 import qualified Multiset as MS
 import Data.Semigroup (Semigroup(sconcat), Any (..))
@@ -75,6 +75,8 @@ data Runtime = Runtime {
 makeFieldLabels ''Runtime
 type RuntimeM m = StateT Runtime m
 
+prettyRuntime :: Runtime -> String
+prettyRuntime r = undefined
 
 instance Semigroup MatchRule where
     (MatchRule uc mcs mes) <> (MatchRule uc' mcs' mes') = MatchRule (uc <> uc') (mcs <> mcs') (mes <> mes')
@@ -82,6 +84,8 @@ instance Semigroup MatchRule where
 instance Monoid MatchRule where
     mempty = MatchRule mempty [] []
 
+bumpEpoch :: Monad m => RuntimeM m ()
+bumpEpoch = modifying #epoch (\num -> if num == defaultTag - 1 then num + 2 else num + 1)
 
 hoistState :: (Monad m) => State s a -> StateT s m a
 hoistState = state . runState
@@ -110,30 +114,24 @@ tryRules rules r = let
     in maybeRule >>= (\rule -> Just $ put binder >> pure rule)
 
 
--- Apply matching conditions from a list of definitions against another tree that isn't the runtime zipper's focus
--- Gives back the first definition where every condition matched, if it exists.
--- tryDefinitionsAt :: [MatchRule] -> Runtime -> Tree RValue -> Binder_ (Maybe MatchRule)
--- tryDefinitionsAt defs r subject = let
---     r' = over #zipper (`Z.put` subject) r
---     in tryRules defs r'
-
-
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
-applyMatchEffect :: TagType -> MatchEffect -> RuntimeM Binder_ ()
-applyMatchEffect _ (MultisetPush ms) = do
+applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
+applyMatchEffect (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap (rebranch defaultTag)  . betaReduce) ms
+    bumpEpoch -- pushing to the multiset bumps the epoch number
     modifying #multiset (MS.putMany ms')
-applyMatchEffect _ (TreeReplacement []) = modifying #zipper Z.dropFocus
-applyMatchEffect tag' (TreeReplacement template) = do
+applyMatchEffect (TreeReplacement []) = modifying #zipper Z.dropFocus
+applyMatchEffect (TreeReplacement template) = do
     binder <- lift get
+    goodTag <- gets runtimeEpoch
     let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
-        tagged = tagAll tag' <$> concat rewritten
+        tagged = tagAll goodTag <$> concat rewritten
     modifying #zipper (`Z.spliceIn` tagged)
 
 -- | Apply all the effects from a given rule
-applyRuleEffects :: TagType -> MatchRule -> RuntimeM Binder_ ()
-applyRuleEffects tag' = mapM_ (applyMatchEffect tag') . matchEffect
+applyRuleEffects :: MatchRule -> RuntimeM Binder_ ()
+applyRuleEffects = mapM_ applyMatchEffect  . matchEffect
 
 treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
 treeMapReduce mapper input@(Leaf _ _) = mapper input
@@ -158,11 +156,11 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta 
 applyRule :: [MatchRule] -> RuntimeM Binder_ (Maybe MatchRule)
 applyRule rules = do
     runtime <- get
-    maybe (pure Nothing) (fmap Just . handleMatchedRule (runtimeEpoch runtime)) (tryRules rules runtime)
+    maybe (pure Nothing) (fmap Just . handleMatchedRule) (tryRules rules runtime)
     where
-        handleMatchedRule :: TagType -> Binder_ MatchRule -> RuntimeM Binder_ MatchRule
-        handleMatchedRule epochTag ruleWithBindings = do
+        handleMatchedRule :: Binder_ MatchRule -> RuntimeM Binder_ MatchRule
+        handleMatchedRule ruleWithBindings = do
             let (matchedRule, binder) = runBinder ruleWithBindings emptyBinder
             lift $ put binder
-            applyRuleEffects epochTag matchedRule >> pure matchedRule
+            applyRuleEffects matchedRule >> pure matchedRule
     

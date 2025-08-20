@@ -105,6 +105,10 @@ main = hspec $ do
         it "places higher precedence on rules with lower depth" $ do 
             "(top :x ~ topped) (mid :x ~ midded) (top (mid (bottom)))" `shouldBecome` "topped"
             "(mid :x ~ midded) (top :x ~ topped) (top (mid (bottom)))" `shouldBecome` "topped"
+        it "eagerness causes matching to back off 1" $ do 
+            "(epic :!x ~ yay) (epic :x ~ wow) (match ~ me) (epic match)" `shouldBecome` "wow"
+        it "eagerness causes matching to back off 2" $ do 
+            "(epic :x ~ wow) (epic :!x ~ yay) (match ~ me) (epic match)" `shouldBecome` "wow"
         it "eagerness overrides depth precedence" $ do 
             "(mid :!x ~ midded) (top (mid (bottom))) (top :!x ~ topped) (top (eat))" `shouldBecome` "(top midded) topped"
             "(top :!x ~ topped) (mid :!x ~ midded) (top (mid (bottom))) (top eat)" `shouldBecome` "(top midded) topped"

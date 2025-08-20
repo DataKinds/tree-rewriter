@@ -53,6 +53,7 @@ eatDef = do
         -- Add the rule definition to the runtime and snip it out from the input tree
         Just td -> do
             addRule td
+            bumpEpoch
             modifying #zipper (Z.nextDfs . Z.dropFocus)
             pure 1
         Nothing -> pure 0
