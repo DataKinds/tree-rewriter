@@ -16,7 +16,7 @@ import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (gets, execStateT, mapStateT)
+import Control.Monad.Trans.State (gets, execStateT, mapStateT, get)
 import Control.Monad (when)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
@@ -101,13 +101,18 @@ eatBuiltin = do
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 -- Runtime debug printing functions
+whenVerbose f = gets runtimeVerbose >>= \v -> when v f
+printLog :: String -> RuntimeM IO ()
+printLog = whenVerbose . lift . putStrLn 
 printZipper :: String -> RuntimeM IO ()
-printZipper l = gets runtimeVerbose >>= \v -> when v $ do
+printZipper l = whenVerbose $ do
     zipper <- gets runtimeZipper
     lift $ putStr (l ++ ": ")
     lift $ print zipper
-printLog :: String -> RuntimeM IO ()
-printLog l = gets runtimeVerbose >>= \v -> when v . lift . putStrLn $ l
+printRuntime :: RuntimeM IO ()
+printRuntime = whenVerbose $ get >>= lift . putStr . prettyRuntime
+printRunSeparator :: RuntimeM IO ()
+printRunSeparator = whenVerbose (lift $ putStrLn "==========================")
 
 -- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
 applyDefs :: RuntimeM IO Int
@@ -141,36 +146,24 @@ fixApplyDefs = do
             tc <- fixApplyDefs
             pure $ n + tc
 
--- Run `applyDefs`, `eatDef`, and `eatBuiltin` until there's no point...
-fixEat :: RuntimeM IO Int
-fixEat = do
-    n <- eatBuiltin -- put, nextDfs . dropFocus, spliceRight
-    n' <- fixApplyDefs
-    n'' <- eatDef -- put, nextDfs . dropFocus
-    n''' <- fixApplyDefs
-    printZipper "Mid-fix"
-    let count = n + n' + n'' + n'''
-    if count == 0
-        then pure 0
-        else do
-            tc <- fixApplyDefs
-            pure $ count + tc
-
 -- Carry out one step of Rosin's execution, then tail call if we are to continue execution.
 -- Gives back the amount of rules applied in the final step (this should ALWAYS be 0!)
 runStep :: RuntimeM IO Int
 runStep = do
-    verbose <- gets runtimeVerbose
-    when verbose (lift $ putStrLn "== STARTING STEP ==")
+    printRunSeparator
     printZipper "Pre-step"
+    printRuntime
 
-    -- Check for a definition or a builtin at the current rewrite head, ingest it if there's one there. Repeat this as many times as it will apply.
+    -- Check for a definition or a builtin at the current rewrite head, ingest it if there's one there.
+    -- Tries to apply user rewrite rules as many times as possible, as user-made rules can output other rules
+    -- TODO: are there any builtins that can also produce other rules? can this break certain structures if they're misinterpreted?
     count <- fixApplyDefs
-    count' <- fixEat
-    printZipper "Post-eat"
+    count' <- eatBuiltin -- can do the following zipper moves: put, nextDfs . dropFocus, spliceRight
+    count'' <- fixApplyDefs
+    count''' <- eatDef -- can do the following zipper moves: put, nextDfs . dropFocus
 
     -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.
-    let rulesApplied = count + count'
+    let rulesApplied = count + count' + count'' + count'''
     when (rulesApplied /= 0) $ do
         assign #areWeDoneYet False
         modifying #epoch (+ 1) 

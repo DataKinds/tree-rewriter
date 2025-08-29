@@ -76,7 +76,17 @@ makeFieldLabels ''Runtime
 type RuntimeM m = StateT Runtime m
 
 prettyRuntime :: Runtime -> String
-prettyRuntime r = undefined
+prettyRuntime r = unlines [
+    "Runtime: "
+    , "    path: " ++ show (runtimePath r)
+    , "    verbose: " ++ show (runtimeVerbose r)
+    , "    rules: " ++ show (runtimeRules r)
+    , "    singleUseRules: " ++ show (runtimeSingleUseRules r)
+    , "    zipper: " ++ show (runtimeZipper r)
+    , "    multiset: " ++ show (runtimeMultiset r)
+    , "    epoch: " ++ show (runtimeEpoch r)
+    , "    areWeDoneYet: " ++ show (runtimeAreWeDoneYet r)
+    ]
 
 instance Semigroup MatchRule where
     (MatchRule uc mcs mes) <> (MatchRule uc' mcs' mes') = MatchRule (uc <> uc') (mcs <> mcs') (mes <> mes')
