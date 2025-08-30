@@ -119,17 +119,15 @@ applyDefs :: RuntimeM IO Int
 applyDefs = do
     onceDefs <- gets runtimeSingleUseRules
     repeatDefs <- gets runtimeRules
-    printLog $ "Once defs: " ++ show onceDefs
-    printLog $ "Repeat defs: " ++ show repeatDefs
     -- Grab the first single use rule that satisfies all conditions and apply it
-    gets runtimeMultiset >>= \p -> printLog $ "Pocket: " ++ show p
     appliedOnceRule <- discardBinder $ applyRule onceDefs
-    printLog $ "Once applied: " ++ show appliedOnceRule
     -- A single use rule matched once, we gotta delete it!
-    for_ appliedOnceRule $ \rule -> modifying #singleUseRules (filter (/= rule))
+    for_ appliedOnceRule $ \rule -> do 
+        printLog $ "Applied one-time rule: " ++ prettyMatchRule rule
+        modifying #singleUseRules (filter (/= rule))
     -- Grab the first multi use rule that satisfies all conditions and apply it
     appliedRule <- discardBinder $ applyRule repeatDefs
-    printLog $ "Repeat applied: " ++ show appliedRule
+    for_ appliedRule $ \rule -> printLog $ "Applied rule: " ++ prettyMatchRule rule
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
     where
         discardBinder :: Monad m => RuntimeM Binder_ a -> RuntimeM m a

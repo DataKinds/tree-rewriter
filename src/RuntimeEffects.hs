@@ -27,6 +27,7 @@ import Data.Functor.Identity (Identity(..))
 import Optics.State
 import Optics
 import Control.Monad (void)
+import Data.List (intercalate)
 
 
 -- is this definition single use or will it apply forever?
@@ -52,6 +53,10 @@ data MatchRule = MatchRule {
     matchCondition :: [MatchCondition],
     matchEffect :: [MatchEffect]
 } deriving (Eq, Show)
+
+prettyMatchRule :: MatchRule -> String
+prettyMatchRule (MatchRule UseOnce conditions effects) = unwords $ map show conditions ++ ["~"] ++ map show effects
+prettyMatchRule (MatchRule UseMany conditions effects) = unwords $ map show conditions ++ ["~>"] ++ map show effects
 
 -- | Runtime handles the state of the rewrite head processing the input data 
 data Runtime = Runtime {
@@ -80,8 +85,10 @@ prettyRuntime r = unlines [
     "Runtime: "
     , "    path: " ++ show (runtimePath r)
     , "    verbose: " ++ show (runtimeVerbose r)
-    , "    rules: " ++ show (runtimeRules r)
-    , "    singleUseRules: " ++ show (runtimeSingleUseRules r)
+    , "    rules: "
+    , intercalate "\n" (("      * " ++) . prettyMatchRule <$> runtimeRules r)
+    , "    singleUseRules: "
+    , intercalate "\n" (("      * " ++) . prettyMatchRule <$> runtimeSingleUseRules r)
     , "    zipper: " ++ show (runtimeZipper r)
     , "    multiset: " ++ show (runtimeMultiset r)
     , "    epoch: " ++ show (runtimeEpoch r)
