@@ -177,7 +177,7 @@ runStep = do
     when (rulesApplied == 0) $ do
         -- 3.3: If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**
         epoch <- use #epoch
-        modifying #zipper (Z.updateFocus $ tagAll epoch) 
+        modifying #zipper (Z.updateFocus $ tagAll epoch) -- TODO: I don think this is right, see out.txt
         -- Matching stuff usually moves our zipper forward, so we only move forward if we didn't match on anything.
         modifying #zipper Z.nextDfs
     -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.

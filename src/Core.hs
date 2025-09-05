@@ -99,7 +99,12 @@ instance Pretty RValue where
 type TagType = Int -- using a type synonym just in case this ever gets extended
 defaultTag :: TagType
 defaultTag = -1 -- the default tag to use when we don't care about tagging (i.e. grabbing templates or parsing)
-data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Functor, Foldable, Traversable, Ord)
+
+instance Eq a => Eq (Tree a) where
+    (==) (Branch _ ts1) (Branch _ ts2) = ts1 == ts2
+    (==) (Leaf _ tip1) (Leaf _ tip2) = tip1 == tip2
+    (==) _ _ = False
 
 -- can't make this a Pretty instance because it's a synonym
 prettyTag :: TagType -> Doc ann

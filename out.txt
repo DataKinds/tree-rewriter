@@ -1,0 +1,1323 @@
+reading sample/small2.tree
+
++-------------------+
+| Parsed from input |
++-------------------+
+(mid :!x ~ midded)
+(top (mid (bottom)))
+(top :!x ~ topped)
+(top (eat))
+======================================
+Zipper:
+!!!!(
+  (
+    mid :!x ~ midded
+  ) (
+    top (
+      mid (
+        bottom
+      )
+    )
+  ) (
+    top :!x ~ topped
+  ) (
+    top (
+      eat
+    )
+  )
+)!!!!
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 0
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  !!!!(:0
+    mid:0 :!x:0 ~:0 midded:0
+  ):0!!!! (:0
+    top:0 (:0
+      mid:0 (:0
+        bottom:0
+      ):0
+    ):0
+  ):0 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  !!!!(:0
+    mid:0 :!x:0 ~:0 midded:0
+  ):0!!!! (:0
+    top:0 (:0
+      mid:0 (:0
+        bottom:0
+      ):0
+    ):0
+  ):0 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 0
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  !!!!(:0
+    top:0 (:0
+      mid:0 (:0
+        bottom:0
+      ):0
+    ):0
+  ):0!!!! (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  !!!!(:0
+    top:0 (:0
+      mid:0 (:0
+        bottom:0
+      ):0
+    ):0
+  ):0!!!! (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (mid :!x) ~ TreeReplacement [midded]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 2
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    !!!!top:2!!!! (:2
+      mid:2 (:2
+        bottom:2
+      ):2
+    ):2
+  ):2 (:0
+    !!!!top:0!!!! :!x:0 ~:0 topped:0
+  ):0 (:0
+    !!!!top:0!!!! (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    !!!!top:2!!!! (:2
+      mid:2 (:2
+        bottom:2
+      ):2
+    ):2
+  ):2 (:0
+    !!!!top:0!!!! :!x:0 ~:0 topped:0
+  ):0 (:0
+    !!!!top:0!!!! (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (mid :!x) ~ TreeReplacement [midded]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 2
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:2 !!!!(:2
+      mid:2 (:2
+        bottom:2
+      ):2
+    ):2!!!!
+  ):2 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:2 !!!!(:2
+      mid:2 (:2
+        bottom:2
+      ):2
+    ):2!!!!
+  ):2 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (mid :!x) ~ TreeReplacement [midded]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 2
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Applied one-time rule: TreePattern (mid :!x) ~ TreeReplacement [midded]
+Zipper:
+(:0
+  (:2
+    top:2 !!!!midded:2!!!!
+  ):2 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:2 !!!!midded:2!!!!
+  ):2 (:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 3
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:2 midded:3
+  ):2 !!!!(:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0!!!! (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:2 midded:3
+  ):2 !!!!(:0
+    top:0 :!x:0 ~:0 topped:0
+  ):0!!!! (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 3
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    !!!!top:2!!!! midded:3
+  ):2 (:0
+    !!!!top:0!!!! (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    !!!!top:2!!!! midded:3
+  ):2 (:0
+    !!!!top:0!!!! (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:5 !!!!midded:3!!!!
+  ):2 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:5 !!!!midded:3!!!!
+  ):2 (:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 !!!!(:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0!!!!
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 !!!!(:0
+    top:0 (:0
+      eat:0
+    ):0
+  ):0!!!!
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    !!!!top:5!!!! midded:5
+  ):2 (:5
+    !!!!top:5!!!! (:5
+      eat:5
+    ):5
+  ):5
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    !!!!top:5!!!! midded:5
+  ):2 (:5
+    !!!!top:5!!!! (:5
+      eat:5
+    ):5
+  ):5
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 !!!!(:5
+      eat:5
+    ):5!!!!
+  ):5
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 !!!!(:5
+      eat:5
+    ):5!!!!
+  ):5
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 (:5
+      !!!!eat:5!!!!
+    ):5
+  ):5
+):0
+======================================
+Zipper:
+(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 (:5
+      !!!!eat:5!!!!
+    ):5
+  ):5
+):0
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+!!!!(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):0!!!!
+======================================
+Zipper:
+!!!!(:0
+  (:2
+    top:5 midded:5
+  ):2 (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):0!!!!
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:5
+  !!!!(:5
+    top:5 midded:5
+  ):5!!!! (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):5
+======================================
+Zipper:
+(:5
+  !!!!(:5
+    top:5 midded:5
+  ):5!!!! (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+      * TreePattern (top :!x) ~ TreeReplacement [topped]
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 5
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Applied one-time rule: TreePattern (top :!x) ~ TreeReplacement [topped]
+Zipper:
+(:5
+  !!!!topped:5!!!! (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):5
+======================================
+Zipper:
+(:5
+  !!!!topped:5!!!! (:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:5
+  topped:6 !!!!(:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5!!!!
+):5
+======================================
+Zipper:
+(:5
+  topped:6 !!!!(:5
+    top:5 (:5
+      eat:5
+    ):5
+  ):5!!!!
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:5
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):5
+======================================
+Zipper:
+(:5
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:5
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):5
+======================================
+Zipper:
+(:5
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:5
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):5
+======================================
+Zipper:
+(:5
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):5
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: False
+    emptyCycleCount: 0
+------------------------
+Zipper:
+!!!!(:5
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):5!!!!
+======================================
+Zipper:
+!!!!(:5
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):5!!!!
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+======================================
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 0
+------------------------
+Zipper:
+!!!!(:6
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6!!!!
+======================================
+Zipper:
+!!!!(:6
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6!!!!
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+======================================
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 1
+------------------------
+Zipper:
+!!!!(:6
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6!!!!
+======================================
+Zipper:
+!!!!(:6
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6!!!!
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  !!!!topped:6!!!! (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+======================================
+Zipper:
+(:6
+  topped:6 !!!!(:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6!!!!
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    !!!!top:6!!!! (:6
+      eat:6
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 !!!!(:6
+      eat:6
+    ):6!!!!
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+======================================
+Zipper:
+(:6
+  topped:6 (:6
+    top:6 (:6
+      !!!!eat:6!!!!
+    ):6
+  ):6
+):6
+------------------------
+Runtime: 
+    path: "sample/small2.tree"
+    verbose: True
+    rules: 
+
+    singleUseRules: 
+
+    zipper: ... waiting for something to happen?
+    multiset: 
+    epoch: 6
+    emptyCycle: True
+    emptyCycleCount: 2
+------------------------
+Zipper:
+!!!!(:6
+  topped:6 (:6
+    top:6 (:6
+      eat:6
+    ):6
+  ):6
+):6!!!!
+
+[]
+
++-----------------+
+| Final transform |
++-----------------+
+topped
+(top (eat))
