@@ -89,7 +89,7 @@ prettyRuntime r = unlines [
     , intercalate "\n" (("      * " ++) . prettyMatchRule <$> runtimeRules r)
     , "    singleUseRules: "
     , intercalate "\n" (("      * " ++) . prettyMatchRule <$> runtimeSingleUseRules r)
-    , "    zipper: " ++ show (runtimeZipper r)
+    , "    zipper: ... waiting for something to happen?"
     , "    multiset: " ++ show (runtimeMultiset r)
     , "    epoch: " ++ show (runtimeEpoch r)
     , "    areWeDoneYet: " ++ show (runtimeAreWeDoneYet r)

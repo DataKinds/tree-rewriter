@@ -4,6 +4,7 @@ module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
 import Optics ((^.))
+import Prettyprinter
 
 -- up, down, left, right, next
 -- the only moves one needs to run
@@ -53,6 +54,8 @@ data Zipper a = Zipper {
 }
 deriving instance (Show a) => Show (Zipper a)
 
+instance Pretty a => Pretty (Zipper a) where
+    pretty = pretty . look
 instance MovesLikeZipper (Zipper a) where
     firstChild :: Zipper a -> Maybe (Zipper a)
     firstChild z = case _Content z of -- TODO: tag wrong?

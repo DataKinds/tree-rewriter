@@ -26,6 +26,7 @@ import Data.Functor.Identity (Identity(..))
 import Optics (modifying, makeFieldLabelsNoPrefix)
 import Data.Kind (Type)
 import Optics
+import Prettyprinter
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -90,11 +91,27 @@ instance Show RValue where
     show (RNumber t) = show t
     show (RVariable t) = show t
 
+instance Pretty RValue where
+    pretty = viaShow
+
 -- The tree!
 type TagType = Int -- using a type synonym just in case this ever gets extended
 defaultTag :: TagType
 defaultTag = -1 -- the default tag to use when we don't care about tagging (i.e. grabbing templates or parsing)
 data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+
+-- can't make this a Pretty instance because it's a synonym
+prettyTag :: TagType -> Doc ann
+prettyTag t = if defaultTag == t then "" else ":" <> pretty t
+
+instance Pretty a => Pretty (Tree a) where
+    pretty :: Pretty a => Tree a -> Doc ann
+    pretty (Branch t forest) = vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> pretty], ")" <> prettyTag t]
+    pretty (Leaf t tip) =  pretty tip <> prettyTag t
+
+prettyTreeWithFocus :: Pretty a => Tree a -> Tree a -> Doc ann
+prettyTreeWithFocus (Branch t forest) focus = vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> pretty], ")" <> prettyTag t]
+prettyTreeWithFocus (Leaf t tip) focus =  pretty tip <> prettyTag t
 
 pattern LeafSym :: T.Text -> Tree RValue
 pattern LeafSym sym <- Leaf _ (RSymbol sym)

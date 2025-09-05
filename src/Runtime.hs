@@ -30,6 +30,9 @@ import Optics.State
 import RuntimeEffects
 import Data.Functor (void)
 import Data.Foldable (for_)
+import Prettyprinter
+import Prettyprinter.Render.Text (putDoc)
+import Control.Arrow ((&&&))
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch False
@@ -101,18 +104,27 @@ eatBuiltin = do
             shouldntBePossible -> error$"Unrecognized builtin "++T.unpack shouldntBePossible++" that matched -- please report this as a bug!"
 
 -- Runtime debug printing functions
-whenVerbose f = gets runtimeVerbose >>= \v -> when v f
+whenVerbose f = gets runtimeVerbose >>= flip when f
+
 printLog :: String -> RuntimeM IO ()
 printLog = whenVerbose . lift . putStrLn 
-printZipper :: String -> RuntimeM IO ()
-printZipper l = whenVerbose $ do
-    zipper <- gets runtimeZipper
-    lift $ putStr (l ++ ": ")
-    lift $ print zipper
+
+printZipper :: RuntimeM IO ()
+printZipper = whenVerbose $ do
+    lift $ putStrLn "Zipper:"
+    z <- use #zipper
+    lift . putDoc . uncurry prettyTreeWithFocus . (Z.look . Z.upmost &&& Z.look) $ z
+    lift $ putStrLn ""
+
 printRuntime :: RuntimeM IO ()
 printRuntime = whenVerbose $ get >>= lift . putStr . prettyRuntime
+
 printRunSeparator :: RuntimeM IO ()
-printRunSeparator = whenVerbose (lift $ putStrLn "==========================")
+printRunSeparator = whenVerbose (lift $ putStrLn "======================================")
+
+printSectionSeparator :: RuntimeM IO ()
+printSectionSeparator = whenVerbose (lift $ putStrLn "------------------------")
+
 
 -- Try to apply our rewrite rules at the current rewrite head. Gives back the number of rules applied.
 applyDefs :: RuntimeM IO Int
@@ -149,8 +161,10 @@ fixApplyDefs = do
 runStep :: RuntimeM IO Int
 runStep = do
     printRunSeparator
-    printZipper "Pre-step"
+    printZipper
+    printSectionSeparator
     printRuntime
+    printSectionSeparator
 
     -- Check for a definition or a builtin at the current rewrite head, ingest it if there's one there.
     -- Tries to apply user rewrite rules as many times as possible, as user-made rules can output other rules
@@ -169,7 +183,7 @@ runStep = do
     when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
 
     -- Let's stop executing if our "done" flag is set and we're back at the top of the input tree
-    printZipper "Pre-termination"
+    printZipper
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
     done <- gets runtimeAreWeDoneYet
     case (atTop, done) of

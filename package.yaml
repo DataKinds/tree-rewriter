@@ -35,6 +35,7 @@ dependencies:
 - pretty-simple
 - QuickCheck
 - hspec
+- prettyprinter
 
 ghc-options:
 - -Wall
