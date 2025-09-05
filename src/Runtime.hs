@@ -32,6 +32,7 @@ import Data.Functor (void)
 import Data.Foldable (for_)
 import Control.Arrow ((&&&))
 import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
+import Optics (set)
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch True 0
@@ -177,7 +178,7 @@ runStep = do
     when (rulesApplied == 0) $ do
         -- 3.3: If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**
         epoch <- use #epoch
-        modifying #zipper (Z.updateFocus $ tagAll epoch) -- TODO: I don think this is right, see out.txt
+        modifying #zipper (Z.updateFocus $ set tag epoch) -- TODO: I don't think this is right? But Idk maybe it is?
         -- Matching stuff usually moves our zipper forward, so we only move forward if we didn't match on anything.
         modifying #zipper Z.nextDfs
     -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.
