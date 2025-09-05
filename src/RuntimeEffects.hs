@@ -28,6 +28,7 @@ import Optics.State
 import Optics
 import Control.Monad (void)
 import Data.List (intercalate)
+import Debug.Trace (trace)
 
 
 -- is this definition single use or will it apply forever?
@@ -164,8 +165,9 @@ applyMatchCondition (MultisetPattern ms) r = let
         pure $ MS.allInside ms' pocket -- TODO: pattern match!
 applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
     subject = Z.look . runtimeZipper $ r
-    -- construct the eager matcher, which only matches eager variables if the runtimeEpoch value allows it
-    in hoistState $ tryApply (allTags (== runtimeEpoch r)) subject pat
+    epoch = r ^. #epoch
+    canApplyDelayed tree = trace ("CHECKING EPOCH " ++ show epoch ++ " ON TREE " ++ show tree) $ allTags (== epoch) tree
+    in hoistState $ tryApply (not . canApplyDelayed) subject pat
 
 
 -- | Grab the first matching rule out of a list of rules. Apply it and tag the tree and modify the runtime accordingly.

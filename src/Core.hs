@@ -27,6 +27,7 @@ import Optics (modifying, makeFieldLabelsNoPrefix)
 import Data.Kind (Type)
 import Optics
 import Prettyprinter
+import Data.Text.Prettyprint.Doc.Render.Terminal (bgColor, Color (Red), AnsiStyle)
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -109,25 +110,17 @@ instance Pretty a => Pretty (Tree a) where
     pretty (Branch t forest) = vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> pretty], ")" <> prettyTag t]
     pretty (Leaf t tip) =  pretty tip <> prettyTag t
 
-prettyTreeWithFocus :: Pretty a => Tree a -> Tree a -> Doc ann
-prettyTreeWithFocus (Branch t forest) focus = vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> pretty], ")" <> prettyTag t]
-prettyTreeWithFocus (Leaf t tip) focus =  pretty tip <> prettyTag t
+prettyTreeWithFocus :: Eq a => Pretty a => ann -> Tree a -> Tree a -> Doc ann
+prettyTreeWithFocus ann focus tree = let highlighter = if tree == focus then annotate ann else id
+    in highlighter $ case tree of 
+        Branch t forest -> vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> prettyTreeWithFocus ann focus], ")" <> prettyTag t]
+        Leaf t tip -> pretty tip <> prettyTag t
 
 pattern LeafSym :: T.Text -> Tree RValue
 pattern LeafSym sym <- Leaf _ (RSymbol sym)
 
 pattern LeafStr :: T.Text -> Tree RValue
 pattern LeafStr sym <- Leaf _ (RString sym)
-
--- | Tagged tree: includes a strict tag at every level, branch and leaf
--- data TaggedTree tag a = Branch !tag [TaggedTree tag a] | Leaf !tag a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
--- deriving instance (Show tag, Show a) => Show (TaggedTree tag a) 
-
--- class Treelike (tree :: Type -> Type) where
---     unpackTree :: tree leaf -> Either [tree leaf] leaf
-
--- untree :: Treelike tree => ([tree c] -> b) -> (c -> b) -> tree c -> b
--- untree branchCase leafCase = either id id . bimap branchCase leafCase . unpackTree
 
 -- | allTags applies a predicate to all tags and returns true if all fit
 allTags :: (TagType -> Bool) -> Tree a -> Bool
@@ -159,13 +152,6 @@ unbranch leaf = [leaf]
 rebranch :: TagType -> [Tree RValue] -> Tree RValue
 rebranch _ [t] = t
 rebranch tag ts = Branch tag ts
-
-prettyprint :: Show a => Tree a -> String
-prettyprint = pp 0
-    where
-        pp 0 (Leaf tag a) = show a
-        pp d (Leaf tag a) = replicate d ' ' ++ "- " ++ show a
-        pp d (Branch tag as) = intercalate "\n" $ map (pp $ d+1) as
 
 -- sexprprint :: Show a => Tree a -> String
 sexprprint (Leaf tag a) = show a
@@ -243,14 +229,13 @@ deepFlatten = Branch defaultTag . go
 
 -- | ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: (Tree RValue -> Bool)                   -- Eager matcher: does a given tree match anything else?
+tryApply :: (Tree RValue -> Bool)                   -- Submatcher: does a given tree match anything else? Used for delayed variables
          -> Tree RValue                             -- Input tree
          -> Tree RValue                             -- Pattern to match
          -> Binder_ Bool                            -- Updated variable bindings, along with whether the match succeeded
 -- Match pattern variables
 tryApply submatcher rval (Leaf _ (RVariable pvar)) = 
     -- Check for submatches and fail out if we're matching an eager variable 
-    -- TODO: check the tag here!
     if pvarEager pvar && submatcher rval then pure False else go pvar
     where
         -- go :: PVar -> State (Binder tag) Bool

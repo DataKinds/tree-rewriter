@@ -30,9 +30,8 @@ import Optics.State
 import RuntimeEffects
 import Data.Functor (void)
 import Data.Foldable (for_)
-import Prettyprinter
-import Prettyprinter.Render.Text (putDoc)
 import Control.Arrow ((&&&))
+import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
 emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch False
@@ -113,7 +112,7 @@ printZipper :: RuntimeM IO ()
 printZipper = whenVerbose $ do
     lift $ putStrLn "Zipper:"
     z <- use #zipper
-    lift . putDoc . uncurry prettyTreeWithFocus . (Z.look . Z.upmost &&& Z.look) $ z
+    lift . putDoc . uncurry (prettyTreeWithFocus (color Red)) . (Z.look &&& Z.look . Z.upmost) $ z
     lift $ putStrLn ""
 
 printRuntime :: RuntimeM IO ()
