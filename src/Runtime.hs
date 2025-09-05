@@ -17,7 +17,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (gets, execStateT, mapStateT, get)
-import Control.Monad (when)
+import Control.Monad (when, ap)
 import Data.Maybe (isJust, fromJust)
 import qualified Multiset as MS
 import Recognizers 
@@ -34,7 +34,7 @@ import Control.Arrow ((&&&))
 import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
 
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch False
+emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch True 0
     where emptyRules = []
           epoch = 0
 
@@ -173,26 +173,36 @@ runStep = do
     count'' <- fixApplyDefs
     count''' <- eatDef -- can do the following zipper moves: put, nextDfs . dropFocus
 
-    -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.
     let rulesApplied = count + count' + count'' + count'''
+    when (rulesApplied == 0) $ do
+        -- 3.3: If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**
+        epoch <- use #epoch
+        modifying #zipper (Z.updateFocus $ tagAll epoch) 
+        -- Matching stuff usually moves our zipper forward, so we only move forward if we didn't match on anything.
+        modifying #zipper Z.nextDfs
+    -- If we matched on anything, mark the execution as not finished and bump the epoch number by one.
     when (rulesApplied /= 0) $ do
-        assign #areWeDoneYet False
+        assign #emptyCycle False
+        assign #emptyCycleCount 0
         modifying #epoch (+ 1) 
-    -- Matching stuff usually moves our zipper forward, so we only move forward if we didn't match on anything.
-    when (rulesApplied == 0) $ modifying #zipper Z.nextDfs
 
-    -- Let's stop executing if our "done" flag is set and we're back at the top of the input tree
     printZipper
+    -- Let's stop executing if our "done" flag is set and we're back at the top of the input tree
+    -- Conditions to stop execution:
+        -- We're at the top of the input tree (aka, we've just looped through it)
+        -- We've already cycled through the input tree 2 times without applying any rule
     atTop <- gets ((== []) . Z._Ups . runtimeZipper)
-    done <- gets runtimeAreWeDoneYet
-    case (atTop, done) of
-        (False, _) -> runStep
-        (True, False) -> assign #areWeDoneYet True >> runStep
-        (True, True) -> pure rulesApplied
+    wasEmptyCycle <- use #emptyCycle
+    emptyCycleCount <- use #emptyCycleCount
+    case (atTop, wasEmptyCycle, emptyCycleCount) of
+        (False, _, _) -> runStep
+        (True, True, 2) -> pure rulesApplied
+        (True, True, _) -> modifying #emptyCycleCount (+ 1) >> runStep
+        (True, False, _) -> assign #emptyCycleCount 0 >> assign #emptyCycle True >> runStep
 
 -- | Sets up the Runtime to take control of its own execution through runStep.
 firstStep :: RuntimeM IO ()
-firstStep = assign #areWeDoneYet True >> assign #epoch 0 >> void runStep
+firstStep = assign #emptyCycle True >> assign #epoch 0 >> void runStep
 
 -- | Executes a Rosin runtime
 run :: Runtime -> IO Runtime

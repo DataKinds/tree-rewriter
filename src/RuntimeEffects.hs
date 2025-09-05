@@ -75,8 +75,10 @@ data Runtime = Runtime {
     runtimeMultiset :: MS.Multiset (Tree RValue),
     -- Epoch number: incremented every time we apply a rule or change our state
     runtimeEpoch :: Int,
-    -- Done marker: are we ready to finish execution?
-    runtimeAreWeDoneYet :: Bool
+    -- Empty cycle: true if we didn't apply any rules this iteration over the tree
+    runtimeEmptyCycle :: Bool,
+    -- Empty cycle count: how many times have we looped over the tree without matching anything?
+    runtimeEmptyCycleCount :: Int 
 } deriving (Show)
 makeFieldLabels ''Runtime
 type RuntimeM m = StateT Runtime m
@@ -93,7 +95,8 @@ prettyRuntime r = unlines [
     , "    zipper: ... waiting for something to happen?"
     , "    multiset: " ++ show (runtimeMultiset r)
     , "    epoch: " ++ show (runtimeEpoch r)
-    , "    areWeDoneYet: " ++ show (runtimeAreWeDoneYet r)
+    , "    emptyCycle: " ++ show (runtimeEmptyCycle r)
+    , "    emptyCycleCount: " ++ show (runtimeEmptyCycleCount r)
     ]
 
 instance Semigroup MatchRule where

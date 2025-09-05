@@ -64,6 +64,7 @@ library
     , parsec
     , pretty-simple
     , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu
@@ -103,6 +104,7 @@ executable rosin
     , parsec
     , pretty-simple
     , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu
@@ -145,6 +147,7 @@ test-suite rosin-test
     , parsec
     , pretty-simple
     , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu

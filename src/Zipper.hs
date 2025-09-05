@@ -123,6 +123,9 @@ look = _Content
 put :: Zipper a -> Tree a -> Zipper a
 put z t = z { _Content = t }
 
+updateFocus :: (Tree a -> Tree a) -> Zipper a -> Zipper a
+updateFocus f z = z { _Content = f $ look z }
+
 hasChildren :: Zipper a -> Bool
 hasChildren z = case _Content z of 
     (Leaf _ _) -> False
