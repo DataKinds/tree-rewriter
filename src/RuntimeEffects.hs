@@ -29,6 +29,7 @@ import Optics
 import Control.Monad (void)
 import Data.List (intercalate)
 import Debug.Trace (trace)
+import qualified Data.Text as T
 
 
 -- is this definition single use or will it apply forever?
@@ -46,7 +47,11 @@ instance Monoid UseCount where
 data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (Tree RValue)) deriving (Eq, Show)
 
 -- | What happens when a definition matches?
-data MatchEffect = TreeReplacement [Tree RValue] | MultisetPush (MS.Multiset (Tree RValue)) deriving (Eq, Show)
+data MatchEffect 
+    = TreeReplacement [Tree RValue] -- Replace the focus of the runtime with a different tree
+    | MultisetPush (MS.Multiset (Tree RValue)) -- Push some terms into the multiset
+    | Force T.Text -- Completely evaluate the given binding given the current runtime
+    deriving (Eq, Show)
 
 -- | Rosin rule definition type
 data MatchRule = MatchRule {
@@ -138,6 +143,13 @@ tryRules rules r = let
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
 applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
+applyMatchEffect (Force name) = undefined
+    -- it's gonna be this: getTreeBinding name to grab the tree in question
+    -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
+    -- swap the whole ahh zipper out for the binding we just grabbed
+    -- call runStep ourselves (don't you love coroutines?)
+    -- save the upmost of the new runtime zipper to the name binding via addTreeBinding name (TODO: we want to REPLACE this binding not add to it)
+    -- then restore all that state we saved in the first step
 applyMatchEffect (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap (rebranch defaultTag)  . betaReduce) ms
     bumpEpoch -- pushing to the multiset bumps the epoch number
