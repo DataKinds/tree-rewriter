@@ -19,7 +19,7 @@ import Core
 import qualified Zipper as Z
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (StateT (runStateT), State, runState, state, get, put, mapStateT, gets)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromMaybe)
 import qualified Multiset as MS
 import Data.Semigroup (Semigroup(sconcat), Any (..))
 import Data.List.NonEmpty (NonEmpty (..))
@@ -50,7 +50,7 @@ data MatchCondition = TreePattern (Tree RValue) | MultisetPattern (MS.Multiset (
 data MatchEffect 
     = TreeReplacement [Tree RValue] -- Replace the focus of the runtime with a different tree
     | MultisetPush (MS.Multiset (Tree RValue)) -- Push some terms into the multiset
-    | Force T.Text -- Completely evaluate the given binding given the current runtime
+    | Force PVar -- Completely evaluate the given binding given the current runtime
     deriving (Eq, Show)
 
 -- | Rosin rule definition type
@@ -139,17 +139,26 @@ tryRules rules r = let
     (maybeRule, binder) = runBinder (go rules) emptyBinder
     in maybeRule >>= (\rule -> Just $ put binder >> pure rule)
 
+-- TODO: subprocess :: Tree RValue -> RuntimeM IO (Tree RValue)
+-- should run an existing runtime on an input tree until it terminates
+-- at which time, it should return how it modified the tree it passed in
+-- then return the runtime with just the bag and rule state modified
 
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
 applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
-applyMatchEffect (Force name) = undefined
+applyMatchEffect (Force name) = do
     -- it's gonna be this: getTreeBinding name to grab the tree in question
     -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
     -- swap the whole ahh zipper out for the binding we just grabbed
     -- call runStep ourselves (don't you love coroutines?)
     -- save the upmost of the new runtime zipper to the name binding via addTreeBinding name (TODO: we want to REPLACE this binding not add to it)
     -- then restore all that state we saved in the first step
+    treeToForce <- fmap (fromMaybe (error $ "binding " ++ show name ++ " forced but doesn't exist")) . lift . getTreeBinding $ name
+    prevZipper <- use #zipper
+    assign #zipper (Z.zipperFromTrees defaultTag treeToForce)
+    -- TODO: run the runtime until it stops
+    assign #zipper prevZipper
 applyMatchEffect (MultisetPush ms) = do
     ms' <- lift $ MS.traverseValues (fmap (rebranch defaultTag)  . betaReduce) ms
     bumpEpoch -- pushing to the multiset bumps the epoch number

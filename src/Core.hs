@@ -27,7 +27,7 @@ import Optics (modifying, makeFieldLabelsNoPrefix)
 import Data.Kind (Type)
 import Optics
 import Prettyprinter
-import Data.Text.Prettyprint.Doc.Render.Terminal (bgColor, Color (Red), AnsiStyle)
+-- import Prettyprinter.Render.Terminal (bgColor, Color (Red), AnsiStyle)
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
