@@ -24,7 +24,6 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import Data.Functor.Identity (Identity(..))
 import Optics (modifying, makeFieldLabelsNoPrefix)
-import Data.Kind (Type)
 import Optics
 import Prettyprinter
 -- import Prettyprinter.Render.Terminal (bgColor, Color (Red), AnsiStyle)
@@ -193,6 +192,9 @@ addTreeBinding pvar binding = modifying #treeBindings (M.alter go (pvarBinderNam
     where
         go Nothing = Just [binding]
         go (Just existingBindings) = Just $ binding:existingBindings
+
+overwriteTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
+overwriteTreeBinding pvar binding = modifying #treeBindings (M.insert (pvarBinderName pvar) [binding])
 
 -- | Get the binding list for a tree pattern variable
 getTreeBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
