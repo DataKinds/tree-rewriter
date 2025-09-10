@@ -1,24 +1,21 @@
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Runtime where
 
 import Core
 import Core.DSL ( str, num, branch, tstr )
+import RuntimeTypes
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (gets, execStateT, mapStateT, get)
+import Control.Monad.Trans.State (gets, execStateT, runStateT, mapStateT, get, put)
 import Control.Monad (when, ap)
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import qualified Multiset as MS
 import Recognizers 
 import System.FilePath ((</>), takeDirectory)
@@ -27,19 +24,113 @@ import Data.Bool (bool)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Multiset (cleanUp)
 import Optics.State
-import RuntimeEffects
 import Data.Functor (void)
+import Data.Semigroup 
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Foldable (for_)
 import Control.Arrow ((&&&))
+import Data.Functor.Identity (runIdentity)
 import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
-import Optics (set)
+import Optics 
+import Debug.Trace (trace)
 
-emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
-emptyRuntime filepath verbose' trees = Runtime filepath verbose' emptyRules emptyRules (Z.zipperFromTrees (epoch-1) trees) MS.empty epoch True 0
-    where emptyRules = []
-          epoch = 0
 
--- Execute a Rosin runtime --
+bumpEpoch :: Monad m => RuntimeM m ()
+bumpEpoch = modifying #epoch (\num -> if num == defaultTag - 1 then num + 2 else num + 1)
+
+
+-- | Apply matching conditions from a definition according to a given runtime.
+-- False if we fail to apply a condition. True if they all apply.
+tryBindConditions :: [MatchCondition] -> Runtime -> Binder_ Bool -- False if a condition didn't apply
+tryBindConditions [] _ = pure True
+tryBindConditions (cond:xs) r = do
+    success <- applyMatchCondition cond r
+    go <- tryBindConditions xs r
+    pure $ success && go
+
+-- | Applies matching rules from a list of rules, without applying the effects.
+-- Gives back the first rule where every condition matched, or nothing.
+tryRules :: [MatchRule] -> Runtime -> Maybe (Binder_ MatchRule)
+tryRules rules r = let
+    go :: [MatchRule] -> Binder_ (Maybe MatchRule)
+    go [] = pure Nothing
+    go (rule:rs) = do
+        success <- put emptyBinder >> tryBindConditions (matchCondition rule) r
+        if success 
+            then pure $ Just rule
+            else go rs
+    (maybeRule, binder) = runBinder (go rules) emptyBinder
+    in maybeRule >>= (\rule -> Just $ put binder >> pure rule)
+
+subprocess :: Tree RValue -> RuntimeM IO (Tree RValue)
+-- should run an existing runtime on an input tree until it terminates
+-- at which time, it should return how it modified the tree it passed in
+-- then return the runtime with just the bag and rule state modified
+subprocess input = undefined -- runStep
+
+-- | Apply a MatchEffect to a given runtime, monadically
+-- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
+applyMatchEffect :: MatchEffect -> RuntimeM Binder_ ()
+applyMatchEffect (Force name) = do
+    -- it's gonna be this: getTreeBinding name to grab the tree in question
+    -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
+    -- swap the whole ahh zipper out for the binding we just grabbed
+    -- call runStep ourselves (don't you love coroutines?)
+    -- save the upmost of the new runtime zipper to the name binding via addTreeBinding name (TODO: we want to REPLACE this binding not add to it)
+    -- then restore all that state we saved in the first step
+    treeToForce <- fmap (fromMaybe (error $ "binding " ++ show name ++ " forced but doesn't exist")) . lift . getTreeBinding $ name
+    prevZipper <- use #zipper
+    assign #zipper (Z.zipperFromTrees defaultTag treeToForce)
+    -- TODO: run the runtime until it stops
+    assign #zipper prevZipper
+applyMatchEffect (MultisetPush ms) = do
+    ms' <- lift $ MS.traverseValues (fmap (rebranch defaultTag)  . betaReduce) ms
+    bumpEpoch -- pushing to the multiset bumps the epoch number
+    modifying #multiset (MS.putMany ms')
+applyMatchEffect (TreeReplacement []) = modifying #zipper Z.dropFocus
+applyMatchEffect (TreeReplacement template) = do
+    binder <- lift get
+    goodTag <- gets runtimeEpoch
+    let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` binder
+        tagged = tagAll goodTag <$> concat rewritten
+    modifying #zipper (`Z.spliceIn` tagged)
+
+-- | Apply all the effects from a given rule
+applyRuleEffects :: MatchRule -> RuntimeM Binder_ ()
+applyRuleEffects = mapM_ applyMatchEffect  . matchEffect
+
+treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
+treeMapReduce mapper input@(Leaf _ _) = mapper input
+treeMapReduce mapper input@(Branch _ xs) = sconcat $ mapper input :| (treeMapReduce mapper <$> xs)
+
+
+-- | Bind variables associated with a match condition, or fail out and return False
+applyMatchCondition :: MatchCondition -> Runtime -> Binder_ Bool
+applyMatchCondition (MultisetPattern ms) r = let
+    pocket = runtimeMultiset r
+    in do
+        ms' <- MS.traverseValues (fmap (rebranch defaultTag) . betaReduce) ms
+        pure $ MS.allInside ms' pocket -- TODO: pattern match!
+applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta reduce, in case this condition comes after the multiset
+    subject = Z.look . runtimeZipper $ r
+    epoch = r ^. #epoch
+    canApplyDelayed tree = trace ("CHECKING EPOCH " ++ show epoch ++ " ON TREE " ++ show tree) $ allTags (== epoch) tree
+    in hoistState $ tryApply (not . canApplyDelayed) subject pat
+
+
+-- | Grab the first matching rule out of a list of rules. Apply it and tag the tree and modify the runtime accordingly.
+-- If we couldn't find a matching rule from the input list, give back Nothing.
+applyRule :: [MatchRule] -> RuntimeM Binder_ (Maybe MatchRule)
+applyRule rules = do
+    runtime <- get
+    maybe (pure Nothing) (fmap Just . handleMatchedRule) (tryRules rules runtime)
+    where
+        handleMatchedRule :: Binder_ MatchRule -> RuntimeM Binder_ MatchRule
+        handleMatchedRule ruleWithBindings = do
+            let (matchedRule, binder) = runBinder ruleWithBindings emptyBinder
+            lift $ put binder
+            applyRuleEffects matchedRule >> pure matchedRule
+    
 
 -- | Add a new tree rewriting rule into the runtime
 addRule :: Monad m => MatchRule -> RuntimeM m ()

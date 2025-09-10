@@ -3,7 +3,7 @@ import Test.Hspec.QuickCheck
 import qualified Data.Text as T
 import Parser (parse)
 import Runtime 
-import RuntimeEffects
+import RuntimeTypes
 import Core (Tree, RValue, rebranch, defaultTag, tagAll)
 import qualified Multiset as MS
 import Trie
