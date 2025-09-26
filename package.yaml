@@ -37,6 +37,7 @@ dependencies:
 - hspec
 - prettyprinter
 - prettyprinter-ansi-terminal
+- mtl
 
 ghc-options:
 - -Wall

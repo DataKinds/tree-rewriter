@@ -1,8 +1,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module RuntimeTypes where
 
@@ -30,6 +31,8 @@ import Data.Semigroup (Semigroup(sconcat), Any (..))
 import Data.Functor.Identity (Identity(..))
 import Optics
 import Debug.Trace (trace)
+import Data.Kind (Type)
+import Control.Monad.State.Class
 
 
 -- import Prettyprinter
@@ -88,10 +91,14 @@ data Runtime = Runtime {
     runtimeEmptyCycleCount :: Int
 } deriving (Show)
 makeFieldLabels ''Runtime
-type RuntimeM m = StateT Runtime m
+makeClassy ''Runtime
+-- type RuntimeM m = StateT Runtime m
 
-hoistState :: (Monad m) => State s a -> StateT s m a
-hoistState = state . runState
+class (MonadState r m, HasRuntime r) => MonadRuntime r (m :: Type -> Type) where
+instance (MonadState r m, HasRuntime r) => MonadRuntime r m where
+
+-- hoistState :: (Monad m) => State s a -> StateT s m a
+-- hoistState = state . runState
 
 -- | Construct an empty runtime, ready to process a tree
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime
