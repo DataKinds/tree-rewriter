@@ -88,7 +88,7 @@ subprocess input = do
 
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
-applyMatchEffect :: (MonadIO n, MonadBinder b m, MonadRuntime r n) => MatchEffect -> n (m ())
+applyMatchEffect :: (MonadIO m, MonadBinder s m, MonadRuntime s m) => MatchEffect -> m ()
 applyMatchEffect (Force pvar) = do
     -- it's gonna be this: getTreeBinding name to grab the tree in question
     -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
@@ -99,7 +99,7 @@ applyMatchEffect (Force pvar) = do
     let assertJust = fromMaybe (error $ "binding " ++ show pvar ++ " forced but doesn't exist")
     treeToForce <- getTreeBinding pvar
     forcedTree <- subprocess [assertJust treeToForce]
-    pure . void $ setTreeBinding pvar forcedTree
+    void $ setTreeBinding pvar forcedTree
 
 applyMatchEffect (MultisetPush ms) = do
     ms' <- MS.traverseValues betaReduce ms
@@ -115,7 +115,7 @@ applyMatchEffect (TreeReplacement template) = do
     pure $ modifying (runtime % #zipper) (`Z.spliceIn` tagged)
 
 -- | Apply all the effects from a given rule
-applyRuleEffects :: (MonadIO m, MonadBinder b m, MonadRuntime r n) => MatchRule -> n (m ())
+applyRuleEffects :: (MonadIO m, MonadBinder s m, MonadRuntime s m) => MatchRule -> m ()
 applyRuleEffects = pure . mapM_ applyMatchEffect  . matchEffect
 
 treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
@@ -139,7 +139,7 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta 
 
 -- | Grab the first matching rule out of a list of rules. Apply it and tag the tree and modify the runtime accordingly.
 -- If we couldn't find a matching rule from the input list, give back Nothing.
-applyRule :: (MonadBinder b m, MonadRuntime r n) => [MatchRule] -> m (n (Maybe MatchRule))
+applyRule :: (MonadBinder s m, MonadRuntime s m) => [MatchRule] -> m (Maybe MatchRule)
 applyRule rules = do
     r <- use runtime
     maybeRule <- tryRules rules r
@@ -247,13 +247,13 @@ applyDefs = do
     onceDefs <- use (runtime % #singleUseRules)
     repeatDefs <- use (runtime % #rules)
     -- Grab the first single use rule that satisfies all conditions and apply it
-    appliedOnceRule <- join$ applyRule onceDefs
+    appliedOnceRule <-  applyRule onceDefs
     -- A single use rule matched once, we gotta delete it!
     for_ appliedOnceRule $ \rule -> do 
         printLog $ "Applied one-time rule: " ++ prettyMatchRule rule
         modifying (runtime % #singleUseRules) (filter (/= rule))
     -- Grab the first multi use rule that satisfies all conditions and apply it
-    appliedRule <- join$applyRule repeatDefs
+    appliedRule <- applyRule repeatDefs
     for_ appliedRule $ \rule -> printLog $ "Applied rule: " ++ prettyMatchRule rule
     pure $ sum (bool 0 1 . isJust <$> [appliedOnceRule, appliedRule])
     -- where
