@@ -9,28 +9,9 @@ module RuntimeTypes where
 
 import Core
 import qualified Zipper as Z
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import Control.Monad.Trans.Class ( lift, lift )
-import Control.Monad.Trans.State
-import Control.Monad ( when, ap, void )
-import Data.Maybe ( isJust, fromJust, isJust, fromMaybe )
 import qualified Multiset as MS
-import System.FilePath ((</>), takeDirectory)
-import Parser (parse)
-import Data.Bool (bool)
 import Data.List (intercalate)
-import Control.Monad.IO.Class (MonadIO(liftIO))
-import Multiset (cleanUp)
-import Optics.State
-import Data.Functor (void)
-import Data.Foldable (for_)
-import Control.Arrow ((&&&))
-import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
-import Data.Semigroup (Semigroup(sconcat), Any (..))
-import Data.Functor.Identity (Identity(..))
 import Optics
-import Debug.Trace (trace)
 import Data.Kind (Type)
 import Control.Monad.State.Class
 
@@ -98,9 +79,6 @@ instance HasRuntime r => HasRuntime (r, x) where
 
 class (MonadBinder r m, MonadState r m, HasRuntime r) => MonadRuntime r (m :: Type -> Type) where
 instance (MonadBinder r m, MonadState r m, HasRuntime r) => MonadRuntime r m where
-
--- hoistState :: (Monad m) => State s a -> StateT s m a
--- hoistState = state . runState
 
 -- | Construct an empty runtime, ready to process a tree
 emptyRuntime :: String -> Bool -> [Tree RValue] -> Runtime

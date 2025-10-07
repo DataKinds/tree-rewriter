@@ -5,7 +5,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
--- {-# LANGUAGE UndecidableInstances #-}
 
 -- This module parses and matches patterns in the input tree for use in the Runtime.
 -- All relevant datatypes for extracting information from the input tree are also compiled here.

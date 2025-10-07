@@ -15,9 +15,8 @@
 module Core where
 
 import qualified Data.Text as T
-import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, StateT, runStateT )
+import Control.Monad.Trans.State.Lazy ( StateT, runStateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
@@ -25,7 +24,6 @@ import Data.Maybe (mapMaybe, fromJust, fromMaybe)
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import Data.Functor.Identity (Identity(..))
-import Optics (modifying, makeFieldLabelsNoPrefix)
 import Optics
 import Prettyprinter
 import Control.Monad.State.Class
@@ -45,15 +43,6 @@ instance TH.Lift ICU.Regex where
 ------------------------------------------------------------
 -- Runtime values, including pattern variables and the tree
 ------------------------------------------------------------
-
--- Enum for special accumulators
--- data SpecialAccumTag = SASum | SANegate | SAProduct | SAPack | SAUnpack deriving (TH.Lift, Eq, Ord)
--- instance Show SpecialAccumTag where
---     show SASum     = "+"
---     show SANegate  = "-"
---     show SAProduct = "*"
---     show SAPack    = "@"
---     show SAUnpack  = "%"
 
 -- Pattern variable tags, holding the origin-type of the pattern variable and any special data it needs to operate
 data PVarTag = PVarNothingSpecial | PVarRegexGroup deriving (TH.Lift, Eq, Ord)
@@ -206,16 +195,6 @@ nullBinder = assign binder emptyBinder
 uses :: (MonadState s m, Is k A_Getter) => Optic' k is s a1 -> (a1 -> a2) -> m a2
 uses l f = gets (views l f)
 
--- | Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
--- addTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
--- addTreeBinding pvar binding = modifying #treeBindings (M.alter go (pvarBinderName pvar))
---     where
---         go Nothing = Just [binding]
---         go (Just existingBindings) = Just $ binding:existingBindings
-
--- overwriteTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
--- overwriteTreeBinding pvar binding = modifying #treeBindings (M.insert (pvarBinderName pvar) [binding])
-
 -- | Get the binding list for a tree pattern variable
 -- getTreeBinding :: (MonadState s m, HasBinder s) => PVar -> m (Maybe [Tree RValue])
 getTreeBinding :: MonadBinder b m => PVar -> m (Maybe (Tree RValue))
@@ -231,17 +210,6 @@ setTreeBinding pvar bdg = do
             _ -> True
     modifying (binder % #treeBindings) (M.insert (pvarBinderName pvar) bdg)
     pure success
-
--- | Bind a new tree pattern variable, or modify an existing with a function.
--- setOrModifyTreeBinding :: MonadBinder b m => PVar -> Tree RValue -> -> m ()
--- setOrModifyTreeBinding pvar bdg = do
---     prevBinding <- getTreeBinding pvar
---     case prevBinding of
---         Just bdg_ -> bdg == bdg_
---         _ -> True
---     modifying #treeBindings (M.insert (pvarBinderName pvar) bdg)
---     pure success
-
 
 -- | Bind a new or existing regex match variable. Expects a groupname with no sigil attached.
 -- Overwrites previously bound variables.
