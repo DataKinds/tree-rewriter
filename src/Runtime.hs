@@ -12,10 +12,9 @@ import RuntimeTypes
 import qualified Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (execStateT, runStateT, mapStateT)
-import Control.Monad (when, ap, join, unless)
-import Data.Maybe (isJust, fromJust, fromMaybe)
+import Control.Monad.Trans.State (execStateT)
+import Control.Monad (when)
+import Data.Maybe (isJust, fromMaybe)
 import qualified Multiset as MS
 import Recognizers 
 import System.FilePath ((</>), takeDirectory)
@@ -29,13 +28,10 @@ import Data.Semigroup
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Foldable (for_)
 import Control.Arrow ((&&&))
-import Data.Functor.Identity (runIdentity, Identity)
 import Prettyprinter.Render.Terminal (putDoc, color, Color (Red))
 import Optics 
-import Debug.Trace (trace)
 import Zipper (treeFromZipper)
 import Control.Monad.State.Class
-import Control.Monad.State.Lazy (StateT)
 
 
 bumpEpoch :: MonadRuntime r m => m ()
@@ -54,12 +50,12 @@ tryBindConditions (cond:xs) r = do
 
 -- | Run an existing runtime on an input tree until it terminates
 -- Returns the modified tree and persists whatever new rules and bag items into the parent runtime.
-subprocess :: (MonadRuntime r m, MonadIO m) => [Tree RValue] -> m (Tree RValue)
+subprocess :: (MonadRuntime r m, MonadIO m) => Tree RValue -> m (Tree RValue)
 subprocess input = do
     prevZipper <- use (runtime % #zipper)
     prevEmptyCycle <- use (runtime % #emptyCycle)
     prevEmptyCycleCount <- use (runtime % #emptyCycleCount)
-    assign (runtime % #zipper) (Z.zipperFromTrees defaultTag input)
+    assign (runtime % #zipper) (Z.zipperFromTree input)
     assign (runtime % #emptyCycle) True -- see RuntimeTypes.emptyRuntime
     assign (runtime % #emptyCycleCount) 0
     _ <- runStep 
@@ -75,7 +71,7 @@ applyMatchEffect :: (MonadIO m, MonadRuntime s m) => MatchEffect -> m ()
 applyMatchEffect (Force pvar) = do
     let assertJust = fromMaybe (error $ "binding " ++ show pvar ++ " forced but doesn't exist")
     treeToForce <- getTreeBinding pvar
-    forcedTree <- subprocess [assertJust treeToForce]
+    forcedTree <- subprocess $ assertJust treeToForce 
     void $ setTreeBinding pvar forcedTree
 applyMatchEffect (MultisetPush ms) = do
     ms' <- MS.traverseValues betaReduce ms
