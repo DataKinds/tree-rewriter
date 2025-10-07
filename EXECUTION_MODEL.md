@@ -7,7 +7,7 @@ Rosin holds a few pieces of state in order to execute on input it receives. The 
 * The **tree**, which is an S-expression that is fed into Rosin to begin execution. We may refer to contiguous slices of this **tree** as **subtrees**. The leaf values of this **tree** are referred to as **terms**. Any element of the **tree** may be **tagged** with arbitrary data as required by this spec.
 * The **pointer**, which points to the currently focused **subtree**. The **pointer** must be able to move up, down, left, or right within the **tree**.
 * The **bag**, which is a multiset that contains **subtrees**. We may call these subtrees **items**.
-* The **epoch number**, which starts at 0 and is incremented every time a **rule** is introduced or the **bag** is changed.
+<!-- * The **epoch number**, which starts at 0 and is incremented every time a **rule** is introduced or the **bag** is changed. -->
 * The **done marker**, which is a boolean that is used to determine whether execution is complete.
 
 TL;DR: Rosin input is a **tree** (S-expression) of **terms**. It remembers rewrite **rules** in the **dictionary**. It's also got a **bag** full of **items** that are actually **subtrees**.
@@ -26,14 +26,28 @@ This rule has four **effects**: `~> world` encodes the effect of replacing the *
 
 Matching all **patterns** in a **rule** then carrying out all **effects** in a **rule** may be called **applying a rule**.
 
-### Eager patterns
-Rosin supports **eager patterns** (TODO: maybe *delayed patterns* is a better name?) for ordering **rules**, where specific **subtrees** inside **patterns** can be marked as **eager**, meaning they'll refuse to match if any **subtree** matches another **rule**. This has the effect of *eagerly evaluating* the **subtree** before applying the **eager pattern**. 
+### Pattern variables
 
-This may be implemented naively with O(n^2) time complexity, but this spec rejects that in favor of the **epoch number**: **eager patterns** should only match if all matching **subtrees** are tagged with the current **epoch number**! This brings the time complexity down to O(n) on the size of the **subtree** in exchange for less predictable **eager pattern** semantics.
+A **pattern** relies on **pattern variables** to capture values out from **subtree**s. **Pattern variables** are denoted by a colon (`:`) and may appear inside both **tree patterns** and **bag patterns**. A few examples:
+
+* `((pop :x) ~>)` matches a **subtree** of the form `(pop it)`, where `:x` binds to `it`.
+* `((get rid of a :y) ~> & :y |)` matches a **subtree** of the form `(get rid of a (fruit salad))`, where `:y` binds to `(fruit salad)` but must also remove a `(fruit salad)` from the **bag**.
+
+Note that the order a **pattern variable** is bound depends on the order of the **patterns** in the **rule**. Notice how the following rule differs from the one above:
+
+* `(:y | & (get rid of a :y) ~>)` matches something of the **bag** and binds it to `:y`. It must then match a **subtree** of the form `(get rid of a :y)`, where `:y` is given by the **subtree** taken from the **bag** above. Since there is no defined order for the bag to return its items, this is not a very useful rule.
+
+
+### Eager patterns
+Rosin supports **eager patterns** for enforcing an execution order on **rules**, where specific **subtrees** inside **patterns** can be marked as **eager**, meaning they'll fully evaluate (see [The rewrite loop](#the-rewrite-loop)) any matching **subtree** before applying the **eager pattern**. This is denoted by a `:!` in place of a `:`. Any side effects caused by evaluating the **subtree** will be carried out. Only one instance of a given **pattern variable** must be marked as eager, and the evaluation will carry out exactly once per unique **pattern variable**. For example:
+
+* `(apple ~> & | slices) ((salad :fruit) ~> eaten) (salad apple)` gives back `eaten` without modifying the bag, because the first rule never matches.
+* `(apple ~> & | slices) ((salad :!fruit) ~> eaten) (salad apple)` gives back `eaten` but with `slices` in the bag, because `:!fruit` eagerly forced the first rule to evaluate on the **subtree** `apple`.
+
 
 ## The rewrite loop
 Rosin will set up a few things before execution begins:
-* Setting the **epoch number** to 0.
+<!-- * Setting the **epoch number** to 0. -->
 * Filling out the **dictionary** with built-in rules.
 * Placing the **pointer** at the first element of the **tree**, when read in DFS order.
 
@@ -43,13 +57,15 @@ Rosin applies **rules** in a loop until it can no longer apply any **rule** acro
 
 1. Set the **done marker** to true
 2. Try consuming the **pointer** as a **rule definition** (i.e. the `(x ~> y & a |> b)` structure given above).
-	1. If this consuming is successful, add one to the **epoch number** and set the **done marker** to false.
+	1. If this consuming is successful, set the **done marker** to false.
+		<!-- add one to the **epoch number** and -->
 3. Try applying all **rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**.
-	1. If a **bag effect** is carried out, add one to the **epoch number**.
-	2. If any rule applies, set the **done marker** to false and jump back to step 3. This heuristic allows faster processing.
-	3. If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**. This ensures that eager patterns match correctly.
+	<!-- 1. If a **bag effect** is carried out, add one to the **epoch number**. -->
+	2. If any rule applies, set the **done marker** to false and jump back to step 3. 
+		<!-- **Tag** all nodes in the **pointer**'s **subtree** with the **epoch number** minus 1. -->
+	<!-- 3. If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**. This ensures that eager patterns match correctly. -->
 4. Try applying all **rules** in the **dictionary** which do not have a **tree pattern** as many times as they will apply.
-	1. If any rule applies, set the **done marker** to false and add one to the **epoch number**.
+	<!-- 1. If any rule applies, set the **done marker** to false and add one to the **epoch number**. -->
 5. Get the **next pointer**.
 	1. If the current **pointer** is at the last element AND the **done marker** is true, finish execution.
 	2. If the current **pointer** is at the last element AND the **done marker** is false, set the **pointer** to the first element in the **tree** and jump to step 1.

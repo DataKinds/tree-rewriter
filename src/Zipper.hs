@@ -1,6 +1,10 @@
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
 module Zipper where
 import Core
 import Data.Maybe (fromMaybe, catMaybes)
+import Optics ((^.))
+import Prettyprinter
 
 -- up, down, left, right, next
 -- the only moves one needs to run
@@ -45,18 +49,22 @@ class MovesLikeZipper a where
 data Zipper a = Zipper {
     _Left :: [Tree a],
     _Right :: [Tree a],
-    _Ups :: [([Tree a], [Tree a])],
+    _Ups :: [([Tree a], TagType, [Tree a])],
     _Content :: Tree a
-} deriving (Show)
+}
+deriving instance (Show a) => Show (Zipper a)
 
+instance Pretty a => Pretty (Zipper a) where
+    pretty = pretty . look
 instance MovesLikeZipper (Zipper a) where
-    firstChild z = case _Content z of 
-        Leaf _ -> Nothing
-        Branch [] -> Nothing
-        Branch (x:xs) -> Just Zipper {
+    firstChild :: Zipper a -> Maybe (Zipper a)
+    firstChild z = case _Content z of -- TODO: tag wrong?
+        Leaf _ _ -> Nothing
+        Branch _ [] -> Nothing
+        Branch tag (x:xs) -> Just Zipper {
             _Left = [],
             _Right = xs,
-            _Ups = (_Left z, _Right z):_Ups z,
+            _Ups = (_Left z, tag, _Right z):_Ups z,
             _Content = x
         }
     left z = case _Left z of
@@ -77,11 +85,11 @@ instance MovesLikeZipper (Zipper a) where
         }
     up z = let lz = leftmost z in case _Ups lz of
         [] -> Nothing
-        (leftPath, rightPath):rest -> Just Zipper {
+        (leftPath, tag, rightPath):rest -> Just Zipper {
             _Left = leftPath,
             _Right = rightPath,
             _Ups = rest,
-            _Content = Branch $ _Content lz:_Right lz
+            _Content = Branch tag $ _Content lz:_Right lz
         }
     dropFocus z = head $ catMaybes [
             dropRight <$> left z, 
@@ -90,7 +98,7 @@ instance MovesLikeZipper (Zipper a) where
             Just $ nullContent z
         ] where dropRight lz = lz { _Right = tail (_Right lz) }
                 dropLeft rz = rz { _Left = tail (_Left rz) }
-                nullContent z' = z' { _Content = Branch [] }
+                nullContent z' = z' { _Content = Branch (_Content z' ^. tag) [] }
 
 
 -- Zipper combinators --
@@ -115,17 +123,19 @@ look = _Content
 put :: Zipper a -> Tree a -> Zipper a
 put z t = z { _Content = t }
 
+updateFocus :: (Tree a -> Tree a) -> Zipper a -> Zipper a
+updateFocus f z = z { _Content = f $ look z }
+
 hasChildren :: Zipper a -> Bool
 hasChildren z = case _Content z of 
-    (Leaf _) -> False
-    (Branch []) -> False
-    (Branch _) -> True
+    (Leaf _ _) -> False
+    (Branch _ []) -> False
+    (Branch _ _) -> True
 
 
 -- Zipper creation and modification --
-
-zipperFromTrees :: [Tree a] -> Zipper a
-zipperFromTrees trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch trees }
+zipperFromTrees :: TagType -> [Tree a] -> Zipper a
+zipperFromTrees tag trees = Zipper { _Left = [], _Right = [], _Ups = [], _Content = Branch tag trees }
 
 zipperFromTree :: Tree a -> Zipper a
 zipperFromTree tree = Zipper { _Left = [], _Right = [], _Ups = [], _Content = tree }

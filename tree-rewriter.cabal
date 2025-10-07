@@ -31,7 +31,7 @@ library
       Parser
       Recognizers
       Runtime
-      RuntimeEffects
+      RuntimeTypes
       Trie
       Zipper
   other-modules:
@@ -49,6 +49,8 @@ library
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
+      PatternSynonyms
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists
   build-depends:
       QuickCheck
@@ -56,10 +58,14 @@ library
     , containers
     , filepath
     , hashable
+    , hspec
+    , mtl
     , optics
     , optparse-applicative
     , parsec
     , pretty-simple
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu
@@ -84,6 +90,8 @@ executable rosin
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
+      PatternSynonyms
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -O3 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -91,10 +99,14 @@ executable rosin
     , containers
     , filepath
     , hashable
+    , hspec
+    , mtl
     , optics
     , optparse-applicative
     , parsec
     , pretty-simple
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu
@@ -122,6 +134,8 @@ test-suite rosin-test
       DuplicateRecordFields
       OverloadedRecordDot
       OverloadedLabels
+      StandaloneDeriving
+      PatternSynonyms
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wincomplete-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -Wno-missing-export-lists -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -130,10 +144,13 @@ test-suite rosin-test
     , filepath
     , hashable
     , hspec
+    , mtl
     , optics
     , optparse-applicative
     , parsec
     , pretty-simple
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell
     , text
     , text-icu

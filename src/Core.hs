@@ -2,27 +2,34 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Core where
 
 import qualified Data.Text as T
-import Data.List ( intercalate )
 import qualified Data.Map as M
-import Control.Monad.Trans.State.Lazy ( State, gets, StateT, runStateT )
+import Control.Monad.Trans.State.Lazy ( StateT, runStateT )
 import Control.Monad (zipWithM)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified Data.Text.ICU as ICU
-import Data.Maybe (mapMaybe, fromJust)
-import Data.Bifunctor (first)
+import Data.Maybe (mapMaybe, fromJust, fromMaybe)
+import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import Data.Functor.Identity (Identity(..))
-import Optics (modifying, makeFieldLabelsNoPrefix)
+import Optics
+import Prettyprinter
+import Control.Monad.State.Class
+import Data.Kind (Type)
+
+-- import Prettyprinter.Render.Terminal (bgColor, Color (Red), AnsiStyle)
 
 instance Eq ICU.Regex where
     (==) = (==) `on` show
@@ -37,17 +44,8 @@ instance TH.Lift ICU.Regex where
 -- Runtime values, including pattern variables and the tree
 ------------------------------------------------------------
 
--- Enum for special accumulators
-data SpecialAccumTag = SASum | SANegate | SAProduct | SAPack | SAUnpack deriving (TH.Lift, Eq, Ord)
-instance Show SpecialAccumTag where
-    show SASum     = "+"
-    show SANegate  = "-"
-    show SAProduct = "*"
-    show SAPack    = "@"
-    show SAUnpack  = "%"
-
 -- Pattern variable tags, holding the origin-type of the pattern variable and any special data it needs to operate
-data PVarTag = PVarNothingSpecial | PVarSpecialAccum SpecialAccumTag | PVarRegexGroup deriving (TH.Lift, Eq, Ord)
+data PVarTag = PVarNothingSpecial | PVarRegexGroup deriving (TH.Lift, Eq, Ord)
 
 -- Pattern values. The PVar record holds values that need to be tracked for all pattern variables. 
 -- Currently this data includes 
@@ -65,7 +63,7 @@ pvarSigil :: PVar -> T.Text
 pvarSigil (PVar eager tag _) = T.pack $ go tag : (if eager then "!" else "")
     where
         go PVarNothingSpecial = ':'
-        go (PVarSpecialAccum _) = '?'
+        -- go (PVarSpecialAccum _) = '?'
         go PVarRegexGroup = '$'
 
 -- | What name do we use for PVars that go into the Binder? 
@@ -87,61 +85,100 @@ instance Show RValue where
     show (RNumber t) = show t
     show (RVariable t) = show t
 
+instance Pretty RValue where
+    pretty = viaShow
+
 -- The tree!
-data Tree a = Branch [Tree a] | Leaf a deriving (TH.Lift, Functor, Foldable, Traversable, Eq, Ord)
+type TagType = Int -- using a type synonym just in case this ever gets extended
+defaultTag :: TagType
+defaultTag = -1 -- the default tag to use when we don't care about tagging (i.e. grabbing templates or parsing)
+data Tree a = Branch !TagType [Tree a] | Leaf !TagType a deriving (TH.Lift, Functor, Foldable, Traversable, Ord)
+
+instance Eq a => Eq (Tree a) where
+    (==) (Branch _ ts1) (Branch _ ts2) = ts1 == ts2
+    (==) (Leaf _ tip1) (Leaf _ tip2) = tip1 == tip2
+    (==) _ _ = False
+
+-- can't make this a Pretty instance because it's a synonym
+prettyTag :: TagType -> Doc ann
+prettyTag t = if defaultTag == t then "" else ":" <> pretty t
+
+instance Pretty a => Pretty (Tree a) where
+    pretty :: Pretty a => Tree a -> Doc ann
+    pretty (Branch t forest) = vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> pretty], ")" <> prettyTag t]
+    pretty (Leaf t tip) =  pretty tip <> prettyTag t
+
+prettyTreeWithFocus :: Eq a => Pretty a => ann -> Tree a -> Tree a -> Doc ann
+prettyTreeWithFocus ann focus tree = let highlighter = if tree == focus then annotate ann else id
+    in highlighter $ case tree of 
+        Branch t forest -> vsep [nest 2 $ vsep ["(" <> prettyTag t, hsep $ forest <&> prettyTreeWithFocus ann focus], ")" <> prettyTag t]
+        Leaf t tip -> pretty tip <> prettyTag t
+
+pattern LeafSym :: T.Text -> Tree RValue
+pattern LeafSym sym <- Leaf _ (RSymbol sym)
+
+pattern LeafStr :: T.Text -> Tree RValue
+pattern LeafStr sym <- Leaf _ (RString sym)
+
+-- | allTags applies a predicate to all tags and returns true if all fit
+allTags :: (TagType -> Bool) -> Tree a -> Bool
+allTags f (Branch ourTag forest) = f ourTag && all (allTags f) forest 
+allTags f leaf = f (leaf ^. tag)
+
+
+-- | tagAll applies a tag to every node in the tree
+tagAll :: TagType -> Tree a -> Tree a
+tagAll tag' (Branch _ forest) = Branch tag' $ tagAll tag' <$> forest
+tagAll tag' leaf = (tag .~ tag') leaf
+
+
+tag :: Lens (Tree a) (Tree a) TagType TagType
+tag = lens get set
+    where
+        get (Branch tag _) = tag
+        get (Leaf tag _) = tag
+        set (Branch _ forest) tag' = Branch tag' forest
+        set (Leaf _ tip) tag' = Leaf tag' tip
+
 
 -- Unwrap one level of branching, if it's possible
-unbranch :: Tree RValue -> [Tree RValue]
-unbranch (Branch trees) = trees
+unbranch :: Tree a -> [Tree a]
+unbranch (Branch _ trees) = trees
 unbranch leaf = [leaf]
 
 -- Rewraps a list of trees into one tree, dropping unnecesary nesting
-rebranch :: [Tree RValue] -> Tree RValue
-rebranch [t] = t
-rebranch ts = Branch ts
+rebranch :: TagType -> [Tree RValue] -> Tree RValue
+rebranch _ [t] = t
+rebranch tag ts = Branch tag ts
 
-prettyprint :: Show a => Tree a -> String
-prettyprint = pp 0
-    where
-        pp 0 (Leaf a) = show a
-        pp d (Leaf a) = replicate d ' ' ++ "- " ++ show a
-        pp d (Branch as) = intercalate "\n" $ map (pp $ d+1) as
-
-sexprprint :: Show a => Tree a -> String
-sexprprint (Leaf a) = show a
-sexprprint (Branch as) = "(" ++ unwords (map sexprprint as) ++ ")"
+-- sexprprint :: Show a => Tree a -> String
+sexprprint (Leaf tag a) = show a
+sexprprint (Branch tag as) = "(" ++ unwords (map sexprprint as) ++ ")"
 
 instance (Show a) => Show (Tree a) where
     show = sexprprint
 
--- Tree rewrite rule datatype
--- Parameterized on leaf type
-data Rewrite a = Rewrite {
-    -- The pattern to match in the data tree
-    rewritePattern :: Tree a,
-    -- The template to replace the matched pattern with
-    rewriteTemplate :: [Tree a]
-} deriving (TH.Lift, Eq)
-
-instance Show a => Show (Rewrite a) where
-    show (Rewrite pattern templates) = sexprprint pattern ++ " -to-> " ++ unwords (sexprprint <$> templates)
-
-
 
 -- | The Binder type, holding the intermediate state needed to apply a single rewrite rule.
 data Binder = Binder {
-    treeBindings :: M.Map T.Text [Tree RValue],
+    treeBindings :: M.Map T.Text (Tree RValue),
     regexBindings :: M.Map T.Text T.Text
 }
 makeFieldLabelsNoPrefix ''Binder
-type BinderT = StateT Binder -- Binder monad
-type Binder_ = BinderT Identity
+makeClassy ''Binder
 
-runBinderT :: BinderT m a -> Binder -> m (a, Binder)
+instance HasBinder b => HasBinder (x, b) where
+    binder = _2 % binder
+
+-- | The MonadBinder constraint: can this transformer stack access a Binder?
+-- If so, you can `use binder` (generated by makeClassy), or `use #binder` (generated by makeFieldLabelsNoPrefix)
+class (MonadState b m, HasBinder b) => MonadBinder b (m :: Type -> Type) where
+instance (MonadState b m, HasBinder b) => MonadBinder b m where
+
+runBinderT :: StateT Binder m a -> Binder -> m (a, Binder)
 runBinderT = runStateT
-runBinder :: Binder_ a -> Binder -> (a, Binder)
+runBinder :: StateT Binder Identity a -> Binder -> (a, Binder)
 runBinder st = runIdentity . runStateT st
-
 
 emptyBinder :: Binder
 emptyBinder = Binder {
@@ -149,102 +186,80 @@ emptyBinder = Binder {
     regexBindings = mempty
 }
 
--- | Bind a new or existing tree pattern variable. If the variable is already bound, tack onto its binding list.
-addTreeBinding :: Monad m => PVar -> Tree RValue -> BinderT m ()
-addTreeBinding pvar binding = modifying #treeBindings (M.alter go (pvarBinderName pvar))
-    where
-        go Nothing = Just [binding]
-        go (Just existingBindings) = Just $ binding:existingBindings
+-- | Clear the binder in the current state
+nullBinder :: MonadBinder b m => m ()
+nullBinder = assign binder emptyBinder
+
+-- | Use the lens l on the current state, and run a function under that context
+-- Is the same as doing `use l >>= pure . f` as far as I can tell
+uses :: (MonadState s m, Is k A_Getter) => Optic' k is s a1 -> (a1 -> a2) -> m a2
+uses l f = gets (views l f)
 
 -- | Get the binding list for a tree pattern variable
-getTreeBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
-getTreeBinding pvar = gets (M.lookup (pvarBinderName pvar) . treeBindings)
+-- getTreeBinding :: (MonadState s m, HasBinder s) => PVar -> m (Maybe [Tree RValue])
+getTreeBinding :: MonadBinder b m => PVar -> m (Maybe (Tree RValue))
+getTreeBinding pvar = uses (binder % #treeBindings) (M.lookup (pvarBinderName pvar))
 
--- | Bind a new or existing pattern variable. Succeed if the binding completed, which requires equality with
--- the existing binding.
-bindIfEqual :: Monad m => PVar -> Tree RValue -> BinderT m Bool
-bindIfEqual pvar binding = do
+-- | Overwrite a new or existing tree pattern variable.
+-- Returns true if we bound a new variable or we didn't change the old binding.
+setTreeBinding :: MonadBinder b m => PVar -> Tree RValue -> m Bool
+setTreeBinding pvar bdg = do
     prevBinding <- getTreeBinding pvar
-    case prevBinding of
-        Just (rval:_) -> pure $ binding == rval
-        _ -> addTreeBinding pvar binding >> pure True
+    let success = case prevBinding of
+            Just bdg_ -> bdg == bdg_
+            _ -> True
+    modifying (binder % #treeBindings) (M.insert (pvarBinderName pvar) bdg)
+    pure success
 
 -- | Bind a new or existing regex match variable. Expects a groupname with no sigil attached.
 -- Overwrites previously bound variables.
-addRegexBinding :: (Monad m) => T.Text -> T.Text -> BinderT m ()
-addRegexBinding groupname matchtext = modifying #regexBindings $ M.insert groupname matchtext
+addRegexBinding :: MonadBinder b m => T.Text -> T.Text -> m ()
+addRegexBinding groupname matchtext = modifying (binder % #regexBindings) $ M.insert groupname matchtext
 
 -- | Get the binding list for a tree pattern variable
-getRegexBinding :: Monad m => PVar -> BinderT m (Maybe T.Text)
-getRegexBinding pvar = gets (M.lookup (pvarName pvar) . regexBindings)
+getRegexBinding :: MonadBinder b m => PVar -> m (Maybe T.Text)
+getRegexBinding pvar = uses (binder % #regexBindings) (M.lookup (pvarName pvar))
 
 -- | Get the correct binding for a PVar. Some PVars may be stored differently in the Binder depending on their tag.
-getBinding :: Monad m => PVar -> BinderT m (Maybe [Tree RValue])
+getBinding :: MonadBinder b m => PVar -> m (Maybe (Tree RValue))
 getBinding pvar = case pvarTag pvar of
-    PVarRegexGroup -> do
-        binding <- getRegexBinding pvar
-        pure (pure . Leaf . RString <$> binding)
+    PVarRegexGroup -> fmap (Leaf defaultTag . RString) <$> getRegexBinding pvar
     _ -> getTreeBinding pvar
 
 -- Flatten a bunch of RValue trees into one Tree Branch in DFS order
 deepFlatten :: [Tree a] -> Tree a
-deepFlatten = Branch . go
+deepFlatten = Branch defaultTag . go
     where go [] = []
           go [end] = [end]
-          go (val:(Leaf end):_) = [val, Leaf end]
-          go (val:(Branch rest):_) = val : go rest
+          go (val:(Leaf tag end):_) = [val, Leaf tag end]
+          go (val:(Branch _ rest):_) = val : go rest
 
 -- | ‧͙⁺˚*･༓☾ Try to match a single pattern at the tip of a tree ☽༓･*˚⁺‧͙ --
 -- Statefully return the variables bound on a successful application --
-tryApply :: (Tree RValue -> Bool)                   -- Eager matcher: does a given tree match anything else?
+tryApply :: MonadBinder b m
+         => (Tree RValue -> Bool)                   -- Submatcher: does a given tree match anything else? Used for delayed variables
          -> Tree RValue                             -- Input tree
          -> Tree RValue                             -- Pattern to match
-         -> Binder_ Bool                            -- Updated variable bindings, along with whether the match succeeded
+         -> m Bool                                  -- Updated variable bindings, along with whether the match succeeded
 -- Match pattern variables
-tryApply submatcher rval (Leaf (RVariable pvar)) = 
+tryApply submatcher rval (Leaf _ (RVariable pvar)) = 
     -- Check for submatches and fail out if we're matching an eager variable 
-    if pvarEager pvar && submatcher rval then pure False else go pvar
-    where
-        go :: PVar -> State Binder Bool
-        -- Bind special accumulators
-        go (PVar _ (PVarSpecialAccum sa) _) = case sa of
-            -- sum accumulator 
-            SASum -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
-                _ -> pure False
-            -- product accumulator 
-            SAProduct -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
-                _ -> pure False
-            -- negation accumulator 
-            SANegate -> case rval of
-                num@(Leaf (RNumber _)) -> addTreeBinding pvar num >> pure True
-                _ -> pure False
-            -- cons to sexpr (pack) accumulator 
-            SAPack -> (addTreeBinding pvar . deepFlatten $ case rval of
-                        Leaf r -> [Leaf r]
-                        Branch rs -> rs) >> pure True
-            -- sexpr to cons (unpack) accumulator 
-            SAUnpack -> case rval of
-                Leaf _ -> pure False
-                Branch rs -> (addTreeBinding pvar . foldr (\leaf acc -> Branch [leaf, acc]) (Branch []) $ rs) >> pure True
-        -- Bind regular pattern variable
-        go _ = bindIfEqual pvar rval
+    if pvarEager pvar && submatcher rval then pure False else setTreeBinding pvar rval
 -- Match ntree branch patterns exactly
-tryApply _ (Branch []) (Branch []) = pure True
-tryApply _ (Branch []) _ = pure False
-tryApply rules (Branch rtrees) (Branch pvals)
+tryApply _ (Branch _ []) (Branch _ []) = pure True
+tryApply _ (Branch _ []) _ = pure False
+tryApply rules (Branch _ rtrees) (Branch _ pvals)
     -- No point to checking patterns that match branches of the wrong length
     | length rtrees /= length pvals = pure False
     | otherwise = and <$> zipWithM (tryApply rules) rtrees pvals
 -- Match symbol patterns
-tryApply _ rval pleaf@(Leaf (RSymbol _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RSymbol _)) = pure $ rval == pleaf
 -- Match number patterns
-tryApply _ rval pleaf@(Leaf (RNumber _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RNumber _)) = pure $ rval == pleaf
 -- Match string patterns 
-tryApply _ rval pleaf@(Leaf (RString _)) = pure $ rval == pleaf
+tryApply _ rval pleaf@(Leaf _ (RString _)) = pure $ rval == pleaf
 -- Match regex, setting variables corresponding to all captures
-tryApply _ (Leaf (RString rstr)) (Leaf (RRegex preg)) =
+tryApply _ (Leaf _ (RString rstr)) (Leaf _ (RRegex preg)) =
     case ICU.find preg rstr of
         Nothing -> pure False
         Just match -> do
@@ -262,33 +277,11 @@ tryApply _ _ _ = pure False
 
 
 -- | Apply variable bindings to a pattern, "filling it out" and modifying any pattern variables according to the binding.
-betaReduce :: Tree RValue -> Binder_ [Tree RValue]
-betaReduce (Branch trees) = do  -- Recursive case
-    treeLists <- mapM betaReduce trees
-    pure [Branch $ concat treeLists]
-betaReduce input@(Leaf (RVariable pvar)) = do  -- Base case, matching a pattern var
-    pvarBinding <- getBinding pvar
-    case pvar of
-        -- Handle special accumulators
-        (PVar _ (PVarSpecialAccum sa) _) -> pure $ goSpecialAccums sa pvarBinding
-        -- Handle substitution on normal pattern variables
-        _ -> case pvarBinding of
-            Just rvals -> pure $ reverse rvals
-            Nothing -> pure [input]
-    where
-        goSpecialAccums :: SpecialAccumTag -> Maybe [Tree RValue] -> [Tree RValue]
-        goSpecialAccums _ Nothing = [] -- unbound special accumulators produce nothing
-        goSpecialAccums sa (Just rvals) = case sa of
-            -- sum accumulator 
-            SASum -> [Leaf . RNumber . sum $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 0 }) <$> rvals)]
-            -- product accumulator 
-            SAProduct -> [Leaf . RNumber . product $ ((\case { Leaf (RNumber rnum) -> rnum ; _ -> 1 }) <$> rvals)]
-            -- negation accumulator 
-            SANegate -> (\case { Leaf (RNumber rnum) -> Leaf . RNumber $ -rnum ; x -> x }) <$> reverse rvals
-            -- other accumulators (SAPack, SAUnpack) bind like normal variables
-            _ -> reverse rvals
+betaReduce :: MonadBinder b m => Tree RValue -> m (Tree RValue)
+betaReduce (Branch tag trees) = Branch tag <$> mapM betaReduce trees -- Recursive case
+betaReduce input@(Leaf tag (RVariable pvar)) = fromMaybe input <$> getBinding pvar -- Base case, matching a pattern var
 -- Perform regex capture group substitutions!
-betaReduce (Leaf (RString pstr)) = do
-    regexBindings <- gets (fmap (first (T.cons '$')) . M.toList . regexBindings)
-    pure . pure . Leaf . RString $ foldr (uncurry T.replace) pstr regexBindings
-betaReduce (Leaf pval) = pure [Leaf pval]
+betaReduce (Leaf tag (RString pstr)) = do
+    translations <- uses (binder % #regexBindings) (fmap (first (T.cons '$')) . M.toList)
+    pure . Leaf tag . RString $ foldr (uncurry T.replace) pstr translations
+betaReduce (Leaf tag pval) = pure $ Leaf tag pval

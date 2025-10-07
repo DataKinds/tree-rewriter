@@ -11,7 +11,7 @@ import Text.Parsec
       try,
       optionMaybe,
       ParsecT, skipMany, oneOf, notFollowedBy, anyChar, manyTill, eof, parserFail, runParserT, ParseError )
-import Core ( Tree, RValue(..), PVarTag (..), PVar (..), SpecialAccumTag (..) ) 
+import Core ( Tree, RValue(..), PVarTag (..), PVar (..) ) 
 import Core.DSL ( sym, str, num, branch, pvar, regex )
 import Data.Char ( isSpace )
 import Control.Applicative (Alternative(some))
@@ -41,25 +41,8 @@ psymParser = sym <$> psymRawParser
 
 -- parses $!hello or :hello or ?+ or ?!@
 pvarParser :: RuleParser (Tree RValue)
-pvarParser = try specialAccum <|> normalVar 
+pvarParser = normalVar 
     where
-        mkAccumParser :: Char -> SpecialAccumTag -> RuleParser (SpecialAccumTag, Char)
-        mkAccumParser accumName accumTag = char accumName >> pure (accumTag, accumName)
-        specialAccum = do
-            _ <- char '?'
-            eager <- isJust <$> optionMaybe (char '!')
-            (accumTag, accumName) <- choice -- parse the accumulator
-                [ mkAccumParser '+' SASum
-                , mkAccumParser '-' SANegate
-                , mkAccumParser '*' SAProduct
-                , mkAccumParser '@' SAPack   
-                , mkAccumParser '%' SAUnpack 
-                ]
-            pure . pvar $ PVar {
-                pvarEager = eager,
-                pvarName = T.singleton accumName,
-                pvarTag = PVarSpecialAccum accumTag
-            }
         normalVar = do
             sigilTag <- choice -- parse the sigil
                 [ char ':' >> pure PVarNothingSpecial

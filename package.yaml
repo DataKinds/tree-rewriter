@@ -34,6 +34,10 @@ dependencies:
 - optics
 - pretty-simple
 - QuickCheck
+- hspec
+- prettyprinter
+- prettyprinter-ansi-terminal
+- mtl
 
 ghc-options:
 - -Wall
@@ -57,6 +61,8 @@ default-extensions:
 - DuplicateRecordFields
 - OverloadedRecordDot
 - OverloadedLabels
+- StandaloneDeriving
+- PatternSynonyms
 
 library:
   source-dirs: src
@@ -83,4 +89,3 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - tree-rewriter
-    - hspec
