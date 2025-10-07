@@ -17,6 +17,8 @@ import RuntimeTypes (MatchRule (..), MatchCondition (..), MatchEffect (..), UseC
 import qualified Multiset as MS
 import Data.Maybe (isJust, listToMaybe, catMaybes)
 import Control.Monad.Trans.Writer.CPS (Writer, tell, execWriter)
+import Control.Monad.Trans.Accum
+import Data.List (nub)
 
 
 data DefOpType = SetOp | TreeOp
@@ -62,12 +64,26 @@ deplete f x = f x >>= go
         go [] = pure ()
         go st = deplete f st
 
+-- | Prepend a `Force` match effect onto a match rule for each eager PVar in its `TreePattern`s
+forced :: MatchRule -> MatchRule
+forced mr@(MatchRule _ conds effs) = let
+    forceEffects = map Force . nub . concatMap findEager $ conds
+    in mr { matchEffect = forceEffects ++ effs }
+    where
+        distinguishEagerPVar :: RValue -> Accum [PVar] ()
+        distinguishEagerPVar (RVariable pv@(PVar True _ _)) = add [pv]
+        distinguishEagerPVar _ = pure ()
+
+        findEager :: MatchCondition -> [PVar]
+        findEager (TreePattern tree) = execAccum (mapM_ distinguishEagerPVar tree) []
+        findEager _ = []
+
 -- Given a tree, is the head of it listing out a rewrite rule?
 recognizeDef :: Tree RValue -> Maybe MatchRule
 recognizeDef (Leaf _ _) = Nothing
 recognizeDef (Branch _ trees) = let
     ingestedDef = execWriter $ deplete eatCondEffectPair trees
-    in if ingestedDef == mempty then Nothing else Just ingestedDef
+    in if ingestedDef == mempty then Nothing else Just . forced $ ingestedDef
 
 
 -- Built in rules parsed from the input tree!

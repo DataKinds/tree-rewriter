@@ -108,11 +108,11 @@ main = hspec $ do
         it "eagerness causes matching to back off 1" $ do 
             "(epic :!x ~ yay) (epic :x ~ wow) (match ~ me) (epic match)" `shouldBecome` "wow"
         it "eagerness causes matching to back off 2" $ do 
-            "(epic :x ~ wow) (epic :!x ~ yay) (match ~ me) (epic match)" `shouldBecome` "wow"
+            "(match ~ me & | matched) (epic :x ~ wow) (epic :!x ~ yay) (epic match)" `shouldBecomeWithBag` "yay" $ [("matched", 1)]
         it "eagerness overrides depth precedence" $ do 
             "(mid :!x ~ midded) (top (mid (bottom))) (top :!x ~ topped) (top (eat))" `shouldBecome` "(top midded) topped"
-            "(top :!x ~ topped) (mid :!x ~ midded) (top (mid (bottom))) (top eat)" `shouldBecome` "(top midded) topped"
-            "(mid :!x ~ midded) (top :!x ~ topped) (top (mid (bottom))) (top eat)" `shouldBecome` "(top midded) topped"
+            "(top :!x ~ topped) (mid :!x ~ midded) (top (mid (bottom))) (top eat) (mid eat)" `shouldBecome` "topped (top eat) (mid eat)"
+            "(mid :!x ~ midded) (top :!x ~ topped) (top (mid (bottom))) (top eat) (mid eat)" `shouldBecome` "topped (top eat) (mid eat)"
         it "handles precedence on rules with the same depth " $ do
             "((grab :x) ~> (grabbed :x) & | :x) ((grab goose) ~> (grab duck)) (grab goose)" `shouldBecomeWithBag` "(grabbed duck)" $ [("duck", 1)]
             "((grab goose) ~> (grab duck)) ((grab :x) ~> (grabbed :x) & | :x) (grab goose)" `shouldBecomeWithBag` "(grabbed goose)" $ [("goose", 1)]

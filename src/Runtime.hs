@@ -52,10 +52,9 @@ tryBindConditions (cond:xs) r = do
     go <- tryBindConditions xs r
     pure $ success && go
 
+-- | Run an existing runtime on an input tree until it terminates
+-- Returns the modified tree and persists whatever new rules and bag items into the parent runtime.
 subprocess :: (MonadRuntime r m, MonadIO m) => [Tree RValue] -> m (Tree RValue)
--- should run an existing runtime on an input tree until it terminates
--- at which time, it should return how it modified the tree it passed in
--- then return the runtime with just the bag and rule state modified
 subprocess input = do
     prevZipper <- use (runtime % #zipper)
     prevEmptyCycle <- use (runtime % #emptyCycle)
@@ -74,12 +73,6 @@ subprocess input = do
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
 applyMatchEffect :: (MonadIO m, MonadRuntime s m) => MatchEffect -> m ()
 applyMatchEffect (Force pvar) = do
-    -- it's gonna be this: getTreeBinding name to grab the tree in question
-    -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
-    -- swap the whole ahh zipper out for the binding we just grabbed
-    -- call runStep ourselves (don't you love coroutines?)
-    -- save the upmost of the new runtime zipper to the name binding via addTreeBinding name (TODO: we want to REPLACE this binding not add to it)
-    -- then restore all that state we saved in the first step
     let assertJust = fromMaybe (error $ "binding " ++ show pvar ++ " forced but doesn't exist")
     treeToForce <- getTreeBinding pvar
     forcedTree <- subprocess [assertJust treeToForce]
@@ -90,10 +83,6 @@ applyMatchEffect (MultisetPush ms) = do
     modifying (runtime % #multiset) (MS.putMany ms')
 applyMatchEffect (TreeReplacement []) = modifying (runtime % #zipper) Z.dropFocus -- TODO: is this line OK? check what empty replacements do
 applyMatchEffect (TreeReplacement template) = do
-    -- bdr <- use binder
-    -- goodTag <- use (runtime % #epoch)
-    -- let (rewritten, _) = runIdentity $ runStateT (mapM betaReduce template) bdr
-        -- tagged = tagAll goodTag <$> rewritten
     rewritten <- mapM betaReduce template
     modifying (runtime % #zipper) (`Z.spliceIn` rewritten)
 
