@@ -92,10 +92,12 @@ data Runtime = Runtime {
 } deriving (Show)
 makeFieldLabels ''Runtime
 makeClassy ''Runtime
--- type RuntimeM m = StateT Runtime m
 
-class (MonadState r m, HasRuntime r) => MonadRuntime r (m :: Type -> Type) where
-instance (MonadState r m, HasRuntime r) => MonadRuntime r m where
+instance HasRuntime r => HasRuntime (r, x) where
+    runtime = _1 % runtime
+
+class (MonadBinder r m, MonadState r m, HasRuntime r) => MonadRuntime r (m :: Type -> Type) where
+instance (MonadBinder r m, MonadState r m, HasRuntime r) => MonadRuntime r m where
 
 -- hoistState :: (Monad m) => State s a -> StateT s m a
 -- hoistState = state . runState

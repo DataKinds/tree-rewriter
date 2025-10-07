@@ -14,7 +14,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (execStateT, runStateT, mapStateT)
-import Control.Monad (when, ap, join)
+import Control.Monad (when, ap, join, unless)
 import Data.Maybe (isJust, fromJust, fromMaybe)
 import qualified Multiset as MS
 import Recognizers 
@@ -45,28 +45,12 @@ bumpEpoch = modifying (runtime % #epoch) (\num -> if num == defaultTag - 1 then 
 -- | Apply matching conditions from a definition according to a given runtime.
 -- False if we fail to apply a condition. True if they all apply.
 tryBindConditions :: MonadBinder b m
-                  => [MatchCondition] -> Runtime -> m Bool -- False if a condition didn't apply
+                  => [MatchCondition] -> Runtime -> m Bool -- True if all conditions applied
 tryBindConditions [] _ = pure True
 tryBindConditions (cond:xs) r = do
     success <- applyMatchCondition cond r
     go <- tryBindConditions xs r
     pure $ success && go
-
--- | Applies matching rules from a list of rules, without applying the effects.
--- Gives back the first rule where every condition matched, or nothing.
-tryRules :: MonadBinder b m => [MatchRule] -> Runtime -> m (Maybe MatchRule)
-tryRules rules r = let
-    go :: MonadBinder b m => [MatchRule] -> m (Maybe MatchRule)
-    go [] = pure Nothing
-    go (rule:rs) = do
-        success <- assign binder emptyBinder >> tryBindConditions (matchCondition rule) r
-        if success 
-            then pure $ Just rule
-            else go rs
-    (maybeRule, binder') = runBinder (go rules) emptyBinder
-    in do
-        assign binder binder'
-        pure maybeRule
 
 subprocess :: (MonadRuntime r m, MonadIO m) => [Tree RValue] -> m (Tree RValue)
 -- should run an existing runtime on an input tree until it terminates
@@ -88,7 +72,7 @@ subprocess input = do
 
 -- | Apply a MatchEffect to a given runtime, monadically
 -- Sequence with a successful `applyMatchCondition` to mutate the runtime state based on a definition -- apply a rule
-applyMatchEffect :: (MonadIO m, MonadBinder s m, MonadRuntime s m) => MatchEffect -> m ()
+applyMatchEffect :: (MonadIO m, MonadRuntime s m) => MatchEffect -> m ()
 applyMatchEffect (Force pvar) = do
     -- it's gonna be this: getTreeBinding name to grab the tree in question
     -- then save the current runtime zipper along with the current epoch/empty cycle/empty cycle count, to be restored later
@@ -100,23 +84,22 @@ applyMatchEffect (Force pvar) = do
     treeToForce <- getTreeBinding pvar
     forcedTree <- subprocess [assertJust treeToForce]
     void $ setTreeBinding pvar forcedTree
-
 applyMatchEffect (MultisetPush ms) = do
     ms' <- MS.traverseValues betaReduce ms
     bumpEpoch -- pushing to the multiset bumps the epoch number
     modifying (runtime % #multiset) (MS.putMany ms')
-    pure . pure $ ()
--- applyMatchEffect (TreeReplacement []) = modifying (runtime % #zipper) Z.dropFocus
+applyMatchEffect (TreeReplacement []) = modifying (runtime % #zipper) Z.dropFocus -- TODO: is this line OK? check what empty replacements do
 applyMatchEffect (TreeReplacement template) = do
-    bdr <- use binder
-    goodTag <- use (runtime % #epoch)
-    let (rewritten, _) = runIdentity $ mapM betaReduce template `runStateT` bdr
-        tagged = tagAll goodTag <$> rewritten
-    pure $ modifying (runtime % #zipper) (`Z.spliceIn` tagged)
+    -- bdr <- use binder
+    -- goodTag <- use (runtime % #epoch)
+    -- let (rewritten, _) = runIdentity $ runStateT (mapM betaReduce template) bdr
+        -- tagged = tagAll goodTag <$> rewritten
+    rewritten <- mapM betaReduce template
+    modifying (runtime % #zipper) (`Z.spliceIn` rewritten)
 
 -- | Apply all the effects from a given rule
-applyRuleEffects :: (MonadIO m, MonadBinder s m, MonadRuntime s m) => MatchRule -> m ()
-applyRuleEffects = pure . mapM_ applyMatchEffect  . matchEffect
+applyRuleEffects :: (MonadIO m, MonadRuntime s m) => MatchRule -> m ()
+applyRuleEffects = mapM_ applyMatchEffect . matchEffect
 
 treeMapReduce :: Semigroup a => (Tree b -> a) -> Tree b -> a
 treeMapReduce mapper input@(Leaf _ _) = mapper input
@@ -139,20 +122,21 @@ applyMatchCondition (TreePattern pat) r = get >>= \binding -> let -- TODO: beta 
 
 -- | Grab the first matching rule out of a list of rules. Apply it and tag the tree and modify the runtime accordingly.
 -- If we couldn't find a matching rule from the input list, give back Nothing.
-applyRule :: (MonadBinder s m, MonadRuntime s m) => [MatchRule] -> m (Maybe MatchRule)
-applyRule rules = do
-    r <- use runtime
-    maybeRule <- tryRules rules r
-    case maybeRule of
-        Just matchedRule -> applyRuleEffects matchedRule >> pure . pure . Just $ matchedRule
-        Nothing -> pure . pure $ Nothing
-    -- maybe (pure $ pure Nothing) (pure . handleMatchedRule) appliedRule
-    -- where
-    --     handleMatchedRule :: (MonadBinder b m, MonadRuntime r n) => m MatchRule -> n (m MatchRule)
-    --     handleMatchedRule ruleWithBindings = do
-    --         let (matchedRule, binder') = runStateT ruleWithBindings emptyBinder
-    --         assign binder binder'
-    --         applyRuleEffects matchedRule >> pure matchedRule
+applyRule :: (MonadIO m, MonadRuntime s m) => [MatchRule] -> m (Maybe MatchRule)
+applyRule [] = pure Nothing
+applyRule (rule:rest) = do
+    applied <- tryRule rule
+    if applied
+    then pure $ Just rule
+    else applyRule rest
+    where
+        -- | try applying one MatchRule, and apply its effects iff it succeeds 
+        tryRule :: (MonadIO m, MonadRuntime s m) => MatchRule -> m Bool
+        tryRule rule' = do
+            r <- use runtime
+            applied <- nullBinder >> tryBindConditions (matchCondition rule') r 
+            when applied $ applyRuleEffects rule'
+            pure applied 
     
 
 -- | Add a new tree rewriting rule into the runtime
@@ -318,12 +302,16 @@ runStep = do
         (True, False, _) -> assign (runtime % #emptyCycleCount) 0 >> assign (runtime % #emptyCycle) True >> runStep
 
 -- | Sets up the Runtime to take control of its own execution through runStep.
-firstStep :: StateT Runtime IO ()
+firstStep :: (MonadRuntime r m, MonadIO m) => m ()
 firstStep = assign (runtime % #emptyCycle) True >> assign (runtime % #epoch) 0 >> void runStep
+
+
+
+--- Concrete initialization of the Runtime monad stack ---
 
 -- | Executes a Rosin runtime
 run :: Runtime -> IO Runtime
-run = execStateT firstStep
+run r = fst <$> execStateT firstStep (r, emptyBinder)
 
 -- we add one layer of `Branch` in Z.zipperFromTrees, let's pop it off here
 unzipper :: Z.Zipper a -> [Tree a]
