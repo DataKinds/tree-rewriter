@@ -66,10 +66,7 @@ Rosin applies **rules** in a loop until it can no longer apply any **rule** acro
 	3. If any **rule** applied in 2.1 or 2.2, jump to 2.
 3. Try consuming the **pointer** as a **rule definition** (i.e. the `(x ~> y & a |> b)` structure given above).
 	1. If this consuming is successful, set the **done marker** to false.
-4. Carry out rule application until rules no longer match. Refer to 2.
-5. Try consuming the **pointer** as a builtin (i.e. `(@ bag)`).
-	1. If this consuming is successful, set the **done marker** to false.
-6. Modify the pointer or wrap up:
+4. Modify the pointer or wrap up:
 	1. If the current **pointer** is at the last element AND the **done marker** is true, finish execution.
 	2. If the current **pointer** is at the last element AND the **done marker** is false, set the **pointer** to the first element in the **tree** and jump to step 1.
 	3. If the **done marker** is true (i.e. no rules applied), set the **pointer** to the **next pointer**.
