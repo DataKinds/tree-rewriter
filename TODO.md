@@ -6,3 +6,4 @@ TODO:
     * Pack / unpack builtins
     * Other existing builtins
     * Bidirectional pattern var matching
+* Finish writing about execution model (regex, builtins)

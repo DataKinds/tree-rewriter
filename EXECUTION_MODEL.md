@@ -51,21 +51,31 @@ Rosin will set up a few things before execution begins:
 * Filling out the **dictionary** with built-in rules.
 * Placing the **pointer** at the first element of the **tree**, when read in DFS order.
 
-Rosin also expects to be able to get the **next pointer**, which is the next pointer in the **tree** when the tree is read in DFS order, or an exception if the **pointer** is at the end of the **tree**.
+Rosin expects to be able to get the **next pointer**, which is the next pointer in the **tree** when the tree is read in DFS order, or an exception if the **pointer** is at the end of the **tree**.
+
+Rosin expects to be able to **consume** a tree, which involves removing the **pointer**'s focused **subtree**, moving the 
 
 Rosin applies **rules** in a loop until it can no longer apply any **rule** across the entire **tree**. The exact procedure for doing this is as follows:
 
 1. Set the **done marker** to true
-2. Try consuming the **pointer** as a **rule definition** (i.e. the `(x ~> y & a |> b)` structure given above).
+2. Carry out rule application until rules no longer match:
+	1. Try applying all **single-use rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**. More recent rules should be applied with higher priority.
+		1. If any **rule** applies, set the **done marker** to false. 
+	2. Try applying all **rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**. More recent rules should be applied with higher priority.
+		1. If any **rule** applies, set the **done marker** to false. 
+	3. If any **rule** applied in 2.1 or 2.2, jump to 2.
+3. Try consuming the **pointer** as a **rule definition** (i.e. the `(x ~> y & a |> b)` structure given above).
 	1. If this consuming is successful, set the **done marker** to false.
-		<!-- add one to the **epoch number** and -->
-3. Try applying all **rules** in the **dictionary** to the **pointer**, in order of when they were added to the **dictionary**.
-	<!-- 1. If a **bag effect** is carried out, add one to the **epoch number**. -->
-	2. If any rule applies, set the **done marker** to false and jump back to step 3. 
-		<!-- **Tag** all nodes in the **pointer**'s **subtree** with the **epoch number** minus 1. -->
-	<!-- 3. If no rules could be applied, **tag** all nodes in the **pointer**'s **subtree** with the **epoch number**. This ensures that eager patterns match correctly. -->
-4. Try applying all **rules** in the **dictionary** which do not have a **tree pattern** as many times as they will apply.
-	<!-- 1. If any rule applies, set the **done marker** to false and add one to the **epoch number**. -->
-5. Get the **next pointer**.
+4. Carry out rule application until rules no longer match. Refer to 2.
+5. Try consuming the **pointer** as a builtin (i.e. `(@ bag)`).
+	1. If this consuming is successful, set the **done marker** to false.
+6. Modify the pointer or wrap up:
 	1. If the current **pointer** is at the last element AND the **done marker** is true, finish execution.
 	2. If the current **pointer** is at the last element AND the **done marker** is false, set the **pointer** to the first element in the **tree** and jump to step 1.
+	3. If the **done marker** is true (i.e. no rules applied), set the **pointer** to the **next pointer**.
+
+This procedure ensures a couple of assumptions are always preserved in favor of making Rosin easier to reason about:
+
+* Given the same input **tree** and same **bag**, **rule** application follows a strict hierarchy of priorities: single-use rules will always apply before multi-use rules, and within a category of rules the most recently consumed rule will apply before an older rule.
+* Rules which do not match anything in the tree (like `(apple |> salad)`) will apply to completion -- until they can no longer be applied -- before Rosin will move the **pointer**.
+* Aside from the above two points, the only way to enforce ordering on **rule** execution is through **eagerness**.
