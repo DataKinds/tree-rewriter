@@ -43,23 +43,6 @@ psymParser = sym <$> psymRawParser
 pvarParser :: RuleParser (Tree RValue)
 pvarParser = normalVar 
     where
-        -- mkAccumParser :: Char -> SpecialAccumTag -> RuleParser (SpecialAccumTag, Char)
-        -- mkAccumParser accumName accumTag = char accumName >> pure (accumTag, accumName)
-        -- specialAccum = do
-        --     _ <- char '?'
-        --     eager <- isJust <$> optionMaybe (char '!')
-        --     (accumTag, accumName) <- choice -- parse the accumulator
-        --         [ mkAccumParser '+' SASum
-        --         , mkAccumParser '-' SANegate
-        --         , mkAccumParser '*' SAProduct
-        --         , mkAccumParser '@' SAPack   
-        --         , mkAccumParser '%' SAUnpack 
-        --         ]
-        --     pure . pvar $ PVar {
-        --         pvarEager = eager,
-        --         pvarName = T.singleton accumName,
-        --         pvarTag = PVarSpecialAccum accumTag
-        --     }
         normalVar = do
             sigilTag <- choice -- parse the sigil
                 [ char ':' >> pure PVarNothingSpecial
